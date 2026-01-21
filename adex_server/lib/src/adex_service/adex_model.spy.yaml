@@ -1,0 +1,54 @@
+### Main model for storing Adex video processing jobs and results
+class: AdexModel
+table: adex_models
+fields:
+  ### URL to the uploaded video file
+  videoUrl: String
+
+  ### Unique processing ID for this job
+  processingId: String
+
+  ### User's prompt describing what to extract from the video
+  userPrompt: String
+
+  ### Optional context about what the video contains
+  whatDoesThisVideoContain: String?
+
+  ### Optional hints for frame extraction (stored as JSON array)
+  suggestFramesToExtract: String?
+
+  ### Whether to extract text from the identified frames
+  extractToText: bool, default=false
+
+  ### Prompt for text extraction (required if extractToText is true)
+  extractedDataInformationPrompt: String?
+
+  ### Processing status: pending, processing, completed, failed
+  status: String, default='pending'
+
+  ### Gemini-generated frame types JSON
+  frameTypesJson: String?
+
+  ### Extracted frames data as JSON with frame type, description, count, and URLs
+  extractedFrames: String?
+
+  ### Extracted text from frames (if extractToText was true)
+  extractedText: String?
+
+  ### Error message if processing failed
+  errorMessage: String?
+
+  ### When this job was created
+  createdAt: DateTime, default=now
+
+  ### When processing was completed
+  completedAt: DateTime?
+
+indexes:
+  processing_id_idx:
+    fields: processingId
+    unique: true
+  status_idx:
+    fields: status
+  created_at_idx:
+    fields: createdAt

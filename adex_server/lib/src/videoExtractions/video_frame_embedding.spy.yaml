@@ -1,0 +1,34 @@
+class: VideoFrameEmbedding
+table: video_frame_embeddings
+fields:
+  ### Foreign key to AdexModel (for linking temp embeddings to a job)
+  adexModelId: int?
+
+  ### The source video URL
+  videoUrl: String
+  ### Unique identifier for this processing run (prevents conflicts if same video processed concurrently)
+  processingId: String
+  ### Frame number in the video
+  frameNumber: int
+  ### Timestamp in seconds (with decimals for precision)
+  timestamp: double
+  ### Path to the frame image file (temporary storage)
+  framePath: String
+  ### The embedding vector from Vertex AI multimodalembedding@002 (1408 dimensions)
+  embedding: Vector(1408)
+  ### Additional metadata as JSON string (optional)
+  metadata: String?
+  ### When this frame was processed
+  createdAt: DateTime, default=now
+
+indexes:
+  adex_model_id_idx:
+    fields: adexModelId
+  video_url_processing_id_idx:
+    fields: videoUrl, processingId
+  timestamp_idx:
+    fields: timestamp
+  embedding_idx:
+    fields: embedding
+    type: ivfflat
+    distanceFunction: cosine

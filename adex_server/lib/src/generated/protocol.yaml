@@ -1,0 +1,26 @@
+adexService:
+  - processVideoFromUrl:
+  - processVideo:
+  - getProcessingStatus:
+  - getProcessingStatusByProcessingId:
+  - getAllAdexModels:
+emailIdp:
+  - login:
+  - startRegistration:
+  - verifyRegistrationCode:
+  - finishRegistration:
+  - startPasswordReset:
+  - verifyPasswordResetCode:
+  - finishPasswordReset:
+jwtRefresh:
+  - refreshAccessToken:
+greeting:
+  - hello:
+upload:
+  - uploadFile:
+  - listFiles:
+  - deleteFile:
+  - downloadFile:
+videoExtraction:
+  - processVideoComplete:
+  - extractVideoFrames:
