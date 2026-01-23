@@ -900,7 +900,7 @@ class VideoExtractionEndpoint extends Endpoint {
 
       // Gemini 3 Pro endpoint
       final url =
-          'https://us-central1-aiplatform.googleapis.com/v1/projects/weedit-india/locations/us-central1/publishers/google/models/gemini-3-flash-preview:generateContent';
+          'https://us-central1-aiplatform.googleapis.com/v1/projects/weedit-india/locations/us-central1/publishers/google/models/gemini-flash-latest:generateContent';
 
       // Make API request
       final response = await http.post(
