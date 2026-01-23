@@ -64,6 +64,7 @@ void run(List<String> args) async {
   // Add CORS middleware to ensure browser clients can load images/files from
   // the uploads route. This allows cross-origin requests from web apps.
   pod.webServer.addMiddleware(CorsMiddleware(), '/uploads');
+  pod.webServer.addMiddleware(CorsMiddleware(), '/uploads/*');
   pod.webServer.addRoute(StaticRoute.directory(uploadsDir), '/uploads');
 
   // Serve all files in the web/static relative directory under /.
@@ -113,8 +114,8 @@ class CorsMiddleware extends MiddlewareObject {
   @override
   Handler call(Handler next) {
     return (req) async {
-      // Handle preflight
-      if (req.method == 'OPTIONS') {
+      // Handle preflight OPTIONS requests
+      if (req.method == Method.options) {
         return Response.ok(
           body: Body.fromString(''),
           headers: Headers.build((h) {
