@@ -842,7 +842,7 @@ Example output:
     return _withRetry(
       operationName: 'Generate frame types',
       () async {
-        final url = 'https://$_location-aiplatform.googleapis.com/v1/projects/$_projectId/locations/$_location/publishers/google/models/gemini-3-pro-preview:generateContent';
+        final url = 'https://$_location-aiplatform.googleapis.com/v1/projects/$_projectId/locations/$_location/publishers/google/models/gemini-2.0-flash-exp:generateContent';
 
         _debug('   🌐 Sending request to Gemini...', emoji: '🤖');
         final response = await http.post(
