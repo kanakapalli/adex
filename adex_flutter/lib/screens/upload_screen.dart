@@ -7,7 +7,7 @@ import '../main.dart';
 
 /// Base URL for accessing uploaded files over the web.
 /// Change this to your production URL when deploying.
-const String _webServerBaseUrl = 'http://localhost:8082';
+const String _webServerBaseUrl = 'http://13.53.188.175:8082';
 
 class UploadScreen extends StatefulWidget {
   const UploadScreen({super.key});

@@ -544,7 +544,7 @@ class _AdexModelsScreenState extends State<AdexModelsScreen> {
                   final url = urls[index];
                   final fullUrl = url.startsWith('http')
                       ? url
-                      : 'http://localhost:8082$url';
+                      : 'http://13.53.188.175:8082$url';
                   return Container(
                     width: 80,
                     margin: EdgeInsets.only(right: index < urls.length - 1 ? 8 : 0),

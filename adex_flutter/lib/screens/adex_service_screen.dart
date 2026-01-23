@@ -8,7 +8,7 @@ import 'package:video_player/video_player.dart';
 
 import '../main.dart';
 
-const String _webServerBaseUrl = 'http://localhost:8082';
+const String _webServerBaseUrl = 'http://13.53.188.175:8082';
 
 /// Responsive breakpoints
 class _Breakpoints {
