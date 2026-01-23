@@ -1121,7 +1121,7 @@ Return ONLY valid JSON with no markdown formatting or explanation.
       final textResponse = await _withRetry(
         operationName: 'Text extraction (all frames)',
         () async {
-          final url = 'https://$_location-aiplatform.googleapis.com/v1/projects/$_projectId/locations/$_location/publishers/google/models/gemini-3-pro-preview:generateContent';
+          final url = 'https://$_location-aiplatform.googleapis.com/v1/projects/$_projectId/locations/$_location/publishers/google/models/gemini-2.0-flash-exp:generateContent';
 
           _debug('   🤖 Calling Gemini with ${allImageParts.length} images...', emoji: '📝');
           final response = await http.post(
