@@ -12,7 +12,27 @@ import 'src/web/routes/root.dart';
 /// The starting point of the Serverpod server.
 void run(List<String> args) async {
   // Initialize Serverpod and connect it with your generated code.
-  final pod = Serverpod(args, Protocol(), Endpoints());
+  final pod = Serverpod(args, Protocol(), Endpoints(),httpResponseHeaders: Headers.fromMap({
+      'Access-Control-Allow-Origin': ['*'],
+      'Access-Control-Allow-Methods': ['GET, POST, PUT, DELETE, OPTIONS'],
+      'Access-Control-Allow-Headers': [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'serverpod-session-id',
+      ],
+    }),
+    httpOptionsResponseHeaders: Headers.fromMap({
+      'Access-Control-Allow-Origin': ['*'],
+      'Access-Control-Allow-Methods': ['GET, POST, PUT, DELETE, OPTIONS'],
+      'Access-Control-Allow-Headers': [
+        'Content-Type',
+        'Authorization',
+        'X-Requested-With',
+        'serverpod-session-id',
+      ],
+      'Access-Control-Max-Age': ['86400'],
+    }),);
 
   // Initialize authentication services for the server.
   // Token managers will be used to validate and issue authentication keys,
