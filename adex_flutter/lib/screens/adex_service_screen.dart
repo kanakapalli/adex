@@ -8,8 +8,6 @@ import 'package:video_player/video_player.dart';
 
 import '../main.dart';
 
-const String _webServerBaseUrl = 'http://13.53.188.175:8082';
-
 /// Responsive breakpoints
 class _Breakpoints {
   static const double compact = 600;
@@ -96,6 +94,7 @@ Return the data in a structured JSON format.''',
   // Rate limiting configuration
   final _concurrencyController = TextEditingController(text: '5');
   final _delayBetweenBatchesController = TextEditingController(text: '200');
+  final _maxRetriesController = TextEditingController(text: '5');
 
   // State
   bool _isProcessing = false;
@@ -131,6 +130,7 @@ Return the data in a structured JSON format.''',
     _textExtractionPromptController.dispose();
     _concurrencyController.dispose();
     _delayBetweenBatchesController.dispose();
+    _maxRetriesController.dispose();
     _scrollController.dispose();
     _fadeController.dispose();
     _videoPlayerController?.dispose();
@@ -180,7 +180,7 @@ Return the data in a structured JSON format.''',
       _errorMessage = null;
       _result = null;
       _processingProgress = 0.0;
-      _processingStatus = 'Uploading video...';
+      _processingStatus = 'Preparing video...';
     });
 
     try {
@@ -193,32 +193,23 @@ Return the data in a structured JSON format.''',
             .toList();
       }
 
-      _updateProgress(0.05, 'Preparing upload...');
+      _updateProgress(0.05, 'Preparing video...');
       await Future.delayed(const Duration(milliseconds: 200));
 
-      _updateProgress(0.1, 'Uploading video...');
+      _updateProgress(0.1, 'Sending video to server for processing...');
 
-      final byteData = ByteData.view(_selectedFileBytes!.buffer);
-      final uploadedFileName = await client.upload.uploadFile(
-        _selectedFileName ?? 'video.mp4',
-        byteData,
-      );
-
-      _updateProgress(0.2, 'Upload complete!');
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      final videoUrl = '/uploads/$uploadedFileName';
-      _updateProgress(0.25, 'Processing with AI...');
+      debugPrint('[PROCESS] Sending ${_selectedFileBytes!.length} bytes directly to server');
 
       final progressTimer = _startProgressSimulation();
 
       try {
-        // Parse rate limiting config
+        final byteData = ByteData.view(_selectedFileBytes!.buffer);
         final concurrency = int.tryParse(_concurrencyController.text.trim()) ?? 5;
         final delayBetweenBatches = int.tryParse(_delayBetweenBatchesController.text.trim()) ?? 200;
+        final maxRetries = int.tryParse(_maxRetriesController.text.trim()) ?? 5;
 
-        final result = await client.adexService.processVideoFromUrl(
-          videoUrl,
+        final result = await client.adexService.processVideo(
+          byteData,
           _userPromptController.text.trim(),
           whatDoesThisVideoContain:
               _videoDescriptionController.text.trim().isNotEmpty
@@ -230,6 +221,7 @@ Return the data in a structured JSON format.''',
               _extractToText ? _textExtractionPromptController.text.trim() : null,
           concurrency: concurrency,
           delayBetweenBatchesMs: delayBetweenBatches,
+          maxRetries: maxRetries,
         );
 
         progressTimer.cancel();
@@ -253,7 +245,9 @@ Return the data in a structured JSON format.''',
         progressTimer.cancel();
         rethrow;
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      debugPrint('[PROCESS] EXCEPTION: $e');
+      debugPrint('[PROCESS] Stack trace: ${stackTrace.toString().split('\n').take(10).join('\n')}');
       setState(() {
         _errorMessage = 'Processing failed: $e';
         _isProcessing = false;
@@ -263,8 +257,7 @@ Return the data in a structured JSON format.''',
 
   Future<void> _initializeVideoPlayer(String videoUrl) async {
     _videoPlayerController?.dispose();
-    final fullUrl = videoUrl.startsWith('http') ? videoUrl : '$_webServerBaseUrl$videoUrl';
-    _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(fullUrl));
+    _videoPlayerController = VideoPlayerController.networkUrl(Uri.parse(videoUrl));
 
     try {
       await _videoPlayerController!.initialize();
@@ -307,8 +300,7 @@ Return the data in a structured JSON format.''',
 
           String? thumbnailUrl;
           if (urls.isNotEmpty) {
-            final rawUrl = urls.first;
-            thumbnailUrl = rawUrl.startsWith('http') ? rawUrl : '$_webServerBaseUrl$rawUrl';
+            thumbnailUrl = urls.first;
           }
 
           timestamps.add(VideoTimestamp(
@@ -946,6 +938,16 @@ Return the data in a structured JSON format.''',
                   keyboardType: TextInputType.number,
                 ),
               ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildCompactField(
+                  colors,
+                  label: 'Max retries (per API call)',
+                  controller: _maxRetriesController,
+                  hint: '5',
+                  keyboardType: TextInputType.number,
+                ),
+              ),
             ],
           ),
         ],
@@ -1432,8 +1434,7 @@ Return the data in a structured JSON format.''',
                       scrollDirection: Axis.horizontal,
                       itemCount: urls.length,
                       itemBuilder: (context, index) {
-                        final rawUrl = urls[index];
-                        final imageUrl = rawUrl.startsWith('http') ? rawUrl : '$_webServerBaseUrl$rawUrl';
+                        final imageUrl = urls[index];
                         final isSelected = _selectedFrameUrl == imageUrl;
 
                         // Get timestamp for this specific frame

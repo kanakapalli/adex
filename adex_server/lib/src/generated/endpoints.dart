@@ -112,6 +112,11 @@ class Endpoints extends _i1.EndpointDispatch {
               type: _i1.getType<int?>(),
               nullable: true,
             ),
+            'maxRetries': _i1.ParameterDescription(
+              name: 'maxRetries',
+              type: _i1.getType<int?>(),
+              nullable: true,
+            ),
           },
           call:
               (
@@ -130,6 +135,7 @@ class Endpoints extends _i1.EndpointDispatch {
                         params['extractedDataInformationPrompt'],
                     concurrency: params['concurrency'],
                     delayBetweenBatchesMs: params['delayBetweenBatchesMs'],
+                    maxRetries: params['maxRetries'],
                   ),
         ),
         'processVideo': _i1.MethodConnector(
@@ -165,6 +171,21 @@ class Endpoints extends _i1.EndpointDispatch {
               type: _i1.getType<String?>(),
               nullable: true,
             ),
+            'concurrency': _i1.ParameterDescription(
+              name: 'concurrency',
+              type: _i1.getType<int?>(),
+              nullable: true,
+            ),
+            'delayBetweenBatchesMs': _i1.ParameterDescription(
+              name: 'delayBetweenBatchesMs',
+              type: _i1.getType<int?>(),
+              nullable: true,
+            ),
+            'maxRetries': _i1.ParameterDescription(
+              name: 'maxRetries',
+              type: _i1.getType<int?>(),
+              nullable: true,
+            ),
           },
           call:
               (
@@ -181,6 +202,9 @@ class Endpoints extends _i1.EndpointDispatch {
                     extractToText: params['extractToText'],
                     extractedDataInformationPrompt:
                         params['extractedDataInformationPrompt'],
+                    concurrency: params['concurrency'],
+                    delayBetweenBatchesMs: params['delayBetweenBatchesMs'],
+                    maxRetries: params['maxRetries'],
                   ),
         ),
         'getProcessingStatus': _i1.MethodConnector(
@@ -455,11 +479,49 @@ class Endpoints extends _i1.EndpointDispatch {
       name: 'upload',
       endpoint: endpoints['upload']!,
       methodConnectors: {
-        'uploadFile': _i1.MethodConnector(
-          name: 'uploadFile',
+        'getUploadDescription': _i1.MethodConnector(
+          name: 'getUploadDescription',
           params: {
-            'fileName': _i1.ParameterDescription(
-              name: 'fileName',
+            'storagePath': _i1.ParameterDescription(
+              name: 'storagePath',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+          },
+          call:
+              (
+                _i1.Session session,
+                Map<String, dynamic> params,
+              ) async => (endpoints['upload'] as _i6.UploadEndpoint)
+                  .getUploadDescription(
+                    session,
+                    params['storagePath'],
+                  ),
+        ),
+        'verifyUpload': _i1.MethodConnector(
+          name: 'verifyUpload',
+          params: {
+            'storagePath': _i1.ParameterDescription(
+              name: 'storagePath',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+          },
+          call:
+              (
+                _i1.Session session,
+                Map<String, dynamic> params,
+              ) async =>
+                  (endpoints['upload'] as _i6.UploadEndpoint).verifyUpload(
+                    session,
+                    params['storagePath'],
+                  ),
+        ),
+        'storeFile': _i1.MethodConnector(
+          name: 'storeFile',
+          params: {
+            'storagePath': _i1.ParameterDescription(
+              name: 'storagePath',
               type: _i1.getType<String>(),
               nullable: false,
             ),
@@ -473,11 +535,30 @@ class Endpoints extends _i1.EndpointDispatch {
               (
                 _i1.Session session,
                 Map<String, dynamic> params,
-              ) async => (endpoints['upload'] as _i6.UploadEndpoint).uploadFile(
+              ) async => (endpoints['upload'] as _i6.UploadEndpoint).storeFile(
                 session,
-                params['fileName'],
+                params['storagePath'],
                 params['fileData'],
               ),
+        ),
+        'getPublicUrl': _i1.MethodConnector(
+          name: 'getPublicUrl',
+          params: {
+            'storagePath': _i1.ParameterDescription(
+              name: 'storagePath',
+              type: _i1.getType<String>(),
+              nullable: false,
+            ),
+          },
+          call:
+              (
+                _i1.Session session,
+                Map<String, dynamic> params,
+              ) async =>
+                  (endpoints['upload'] as _i6.UploadEndpoint).getPublicUrl(
+                    session,
+                    params['storagePath'],
+                  ),
         ),
         'listFiles': _i1.MethodConnector(
           name: 'listFiles',
@@ -493,8 +574,8 @@ class Endpoints extends _i1.EndpointDispatch {
         'deleteFile': _i1.MethodConnector(
           name: 'deleteFile',
           params: {
-            'fileName': _i1.ParameterDescription(
-              name: 'fileName',
+            'storagePath': _i1.ParameterDescription(
+              name: 'storagePath',
               type: _i1.getType<String>(),
               nullable: false,
             ),
@@ -505,27 +586,8 @@ class Endpoints extends _i1.EndpointDispatch {
                 Map<String, dynamic> params,
               ) async => (endpoints['upload'] as _i6.UploadEndpoint).deleteFile(
                 session,
-                params['fileName'],
+                params['storagePath'],
               ),
-        ),
-        'downloadFile': _i1.MethodConnector(
-          name: 'downloadFile',
-          params: {
-            'fileName': _i1.ParameterDescription(
-              name: 'fileName',
-              type: _i1.getType<String>(),
-              nullable: false,
-            ),
-          },
-          call:
-              (
-                _i1.Session session,
-                Map<String, dynamic> params,
-              ) async =>
-                  (endpoints['upload'] as _i6.UploadEndpoint).downloadFile(
-                    session,
-                    params['fileName'],
-                  ),
         ),
       },
     );

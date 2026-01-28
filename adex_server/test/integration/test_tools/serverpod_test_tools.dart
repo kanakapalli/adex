@@ -193,6 +193,7 @@ class _AdexServiceEndpoint {
     String? extractedDataInformationPrompt,
     int? concurrency,
     int? delayBetweenBatchesMs,
+    int? maxRetries,
   }) async {
     return _i1.callAwaitableFunctionAndHandleExceptions(() async {
       var _localUniqueSession =
@@ -214,6 +215,7 @@ class _AdexServiceEndpoint {
             'extractedDataInformationPrompt': extractedDataInformationPrompt,
             'concurrency': concurrency,
             'delayBetweenBatchesMs': delayBetweenBatchesMs,
+            'maxRetries': maxRetries,
           }),
           serializationManager: _serializationManager,
         );
@@ -238,6 +240,9 @@ class _AdexServiceEndpoint {
     List<String>? suggestFramesToExtract,
     required bool extractToText,
     String? extractedDataInformationPrompt,
+    int? concurrency,
+    int? delayBetweenBatchesMs,
+    int? maxRetries,
   }) async {
     return _i1.callAwaitableFunctionAndHandleExceptions(() async {
       var _localUniqueSession =
@@ -257,6 +262,9 @@ class _AdexServiceEndpoint {
             'suggestFramesToExtract': suggestFramesToExtract,
             'extractToText': extractToText,
             'extractedDataInformationPrompt': extractedDataInformationPrompt,
+            'concurrency': concurrency,
+            'delayBetweenBatchesMs': delayBetweenBatchesMs,
+            'maxRetries': maxRetries,
           }),
           serializationManager: _serializationManager,
         );
@@ -708,24 +716,86 @@ class _UploadEndpoint {
 
   final _i2.SerializationManager _serializationManager;
 
-  _i3.Future<String> uploadFile(
+  _i3.Future<String?> getUploadDescription(
     _i1.TestSessionBuilder sessionBuilder,
-    String fileName,
+    String storagePath,
+  ) async {
+    return _i1.callAwaitableFunctionAndHandleExceptions(() async {
+      var _localUniqueSession =
+          (sessionBuilder as _i1.InternalTestSessionBuilder).internalBuild(
+            endpoint: 'upload',
+            method: 'getUploadDescription',
+          );
+      try {
+        var _localCallContext = await _endpointDispatch.getMethodCallContext(
+          createSessionCallback: (_) => _localUniqueSession,
+          endpointPath: 'upload',
+          methodName: 'getUploadDescription',
+          parameters: _i1.testObjectToJson({'storagePath': storagePath}),
+          serializationManager: _serializationManager,
+        );
+        var _localReturnValue =
+            await (_localCallContext.method.call(
+                  _localUniqueSession,
+                  _localCallContext.arguments,
+                )
+                as _i3.Future<String?>);
+        return _localReturnValue;
+      } finally {
+        await _localUniqueSession.close();
+      }
+    });
+  }
+
+  _i3.Future<bool> verifyUpload(
+    _i1.TestSessionBuilder sessionBuilder,
+    String storagePath,
+  ) async {
+    return _i1.callAwaitableFunctionAndHandleExceptions(() async {
+      var _localUniqueSession =
+          (sessionBuilder as _i1.InternalTestSessionBuilder).internalBuild(
+            endpoint: 'upload',
+            method: 'verifyUpload',
+          );
+      try {
+        var _localCallContext = await _endpointDispatch.getMethodCallContext(
+          createSessionCallback: (_) => _localUniqueSession,
+          endpointPath: 'upload',
+          methodName: 'verifyUpload',
+          parameters: _i1.testObjectToJson({'storagePath': storagePath}),
+          serializationManager: _serializationManager,
+        );
+        var _localReturnValue =
+            await (_localCallContext.method.call(
+                  _localUniqueSession,
+                  _localCallContext.arguments,
+                )
+                as _i3.Future<bool>);
+        return _localReturnValue;
+      } finally {
+        await _localUniqueSession.close();
+      }
+    });
+  }
+
+  _i3.Future<String?> storeFile(
+    _i1.TestSessionBuilder sessionBuilder,
+    String storagePath,
     _i5.ByteData fileData,
   ) async {
     return _i1.callAwaitableFunctionAndHandleExceptions(() async {
       var _localUniqueSession =
           (sessionBuilder as _i1.InternalTestSessionBuilder).internalBuild(
             endpoint: 'upload',
-            method: 'uploadFile',
+            method: 'storeFile',
           );
       try {
         var _localCallContext = await _endpointDispatch.getMethodCallContext(
           createSessionCallback: (_) => _localUniqueSession,
           endpointPath: 'upload',
-          methodName: 'uploadFile',
+          methodName: 'storeFile',
           parameters: _i1.testObjectToJson({
-            'fileName': fileName,
+            'storagePath': storagePath,
             'fileData': fileData,
           }),
           serializationManager: _serializationManager,
@@ -735,7 +805,38 @@ class _UploadEndpoint {
                   _localUniqueSession,
                   _localCallContext.arguments,
                 )
-                as _i3.Future<String>);
+                as _i3.Future<String?>);
+        return _localReturnValue;
+      } finally {
+        await _localUniqueSession.close();
+      }
+    });
+  }
+
+  _i3.Future<String?> getPublicUrl(
+    _i1.TestSessionBuilder sessionBuilder,
+    String storagePath,
+  ) async {
+    return _i1.callAwaitableFunctionAndHandleExceptions(() async {
+      var _localUniqueSession =
+          (sessionBuilder as _i1.InternalTestSessionBuilder).internalBuild(
+            endpoint: 'upload',
+            method: 'getPublicUrl',
+          );
+      try {
+        var _localCallContext = await _endpointDispatch.getMethodCallContext(
+          createSessionCallback: (_) => _localUniqueSession,
+          endpointPath: 'upload',
+          methodName: 'getPublicUrl',
+          parameters: _i1.testObjectToJson({'storagePath': storagePath}),
+          serializationManager: _serializationManager,
+        );
+        var _localReturnValue =
+            await (_localCallContext.method.call(
+                  _localUniqueSession,
+                  _localCallContext.arguments,
+                )
+                as _i3.Future<String?>);
         return _localReturnValue;
       } finally {
         await _localUniqueSession.close();
@@ -775,7 +876,7 @@ class _UploadEndpoint {
 
   _i3.Future<bool> deleteFile(
     _i1.TestSessionBuilder sessionBuilder,
-    String fileName,
+    String storagePath,
   ) async {
     return _i1.callAwaitableFunctionAndHandleExceptions(() async {
       var _localUniqueSession =
@@ -788,7 +889,7 @@ class _UploadEndpoint {
           createSessionCallback: (_) => _localUniqueSession,
           endpointPath: 'upload',
           methodName: 'deleteFile',
-          parameters: _i1.testObjectToJson({'fileName': fileName}),
+          parameters: _i1.testObjectToJson({'storagePath': storagePath}),
           serializationManager: _serializationManager,
         );
         var _localReturnValue =
@@ -797,37 +898,6 @@ class _UploadEndpoint {
                   _localCallContext.arguments,
                 )
                 as _i3.Future<bool>);
-        return _localReturnValue;
-      } finally {
-        await _localUniqueSession.close();
-      }
-    });
-  }
-
-  _i3.Future<_i5.ByteData?> downloadFile(
-    _i1.TestSessionBuilder sessionBuilder,
-    String fileName,
-  ) async {
-    return _i1.callAwaitableFunctionAndHandleExceptions(() async {
-      var _localUniqueSession =
-          (sessionBuilder as _i1.InternalTestSessionBuilder).internalBuild(
-            endpoint: 'upload',
-            method: 'downloadFile',
-          );
-      try {
-        var _localCallContext = await _endpointDispatch.getMethodCallContext(
-          createSessionCallback: (_) => _localUniqueSession,
-          endpointPath: 'upload',
-          methodName: 'downloadFile',
-          parameters: _i1.testObjectToJson({'fileName': fileName}),
-          serializationManager: _serializationManager,
-        );
-        var _localReturnValue =
-            await (_localCallContext.method.call(
-                  _localUniqueSession,
-                  _localCallContext.arguments,
-                )
-                as _i3.Future<_i5.ByteData?>);
         return _localReturnValue;
       } finally {
         await _localUniqueSession.close();

@@ -51,6 +51,7 @@ sessionLogs:
   persistentEnabled: true
   consoleEnabled: true
   consoleLogFormat: text # Defaults to "json", options are "text" or "json"
+  consoleLogLevel: warning # Suppress verbose query logs (embedding vectors)
 
 # futureCallExecutionEnabled: true # Defaults to true
 

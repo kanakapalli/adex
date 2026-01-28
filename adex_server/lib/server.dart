@@ -3,9 +3,11 @@ import 'dart:io';
 import 'package:serverpod/serverpod.dart';
 import 'package:serverpod_auth_idp_server/core.dart';
 import 'package:serverpod_auth_idp_server/providers/email.dart';
+import 'package:serverpod_cloud_storage_s3/serverpod_cloud_storage_s3.dart' as s3;
 
 import 'src/generated/endpoints.dart';
 import 'src/generated/protocol.dart';
+import 'src/upload/s3_upload_helper.dart';
 import 'src/web/routes/app_config_route.dart';
 import 'src/web/routes/root.dart';
 
@@ -51,21 +53,52 @@ void run(List<String> args) async {
     ],
   );
 
+  // Register S3 cloud storage for file uploads
+  print('[S3_INIT] Registering S3 cloud storage...');
+  print('[S3_INIT]   storageId: public');
+  print('[S3_INIT]   region: eu-north-1');
+  print('[S3_INIT]   bucket: anuragstorage');
+  print('[S3_INIT]   publicHost: anuragstorage.s3.eu-north-1.amazonaws.com');
+  print('[S3_INIT]   public: true');
+
+  // Check if AWS credentials are present in passwords
+  final awsKeyId = pod.getPassword('AWSAccessKeyId');
+  final awsSecret = pod.getPassword('AWSSecretKey');
+  print('[S3_INIT]   AWSAccessKeyId present: ${awsKeyId != null && awsKeyId.isNotEmpty} (length: ${awsKeyId?.length ?? 0})');
+  print('[S3_INIT]   AWSSecretKey present: ${awsSecret != null && awsSecret.isNotEmpty} (length: ${awsSecret?.length ?? 0})');
+
+  if (awsKeyId == null || awsKeyId.isEmpty || awsKeyId == 'PLACEHOLDER') {
+    print('[S3_INIT]   WARNING: AWSAccessKeyId is missing or placeholder!');
+  }
+  if (awsSecret == null || awsSecret.isEmpty || awsSecret == 'PLACEHOLDER') {
+    print('[S3_INIT]   WARNING: AWSSecretKey is missing or placeholder!');
+  }
+
+  // Initialize patched S3 upload helper (fixes s3-region -> s3.region URL format)
+  if (awsKeyId != null && awsKeyId.isNotEmpty && awsSecret != null && awsSecret.isNotEmpty) {
+    S3UploadHelper.initialize(
+      accessKey: awsKeyId,
+      secretKey: awsSecret,
+      bucket: 'anuragstorage',
+      region: 'eu-north-1',
+    );
+    print('[S3_INIT] S3UploadHelper initialized (patched URL format)');
+  }
+
+  pod.addCloudStorage(s3.S3CloudStorage(
+    serverpod: pod,
+    storageId: 'public',
+    public: true,
+    region: 'eu-north-1',
+    bucket: 'anuragstorage',
+    publicHost: 'anuragstorage.s3.eu-north-1.amazonaws.com',
+  ));
+  print('[S3_INIT] S3 cloud storage registered successfully.');
+
   // Setup a default page at the web root.
   // These are used by the default page.
   pod.webServer.addRoute(RootRoute(), '/');
   pod.webServer.addRoute(RootRoute(), '/index.html');
-
-  // Serve uploaded files publicly at /uploads/
-  final uploadsDir = Directory('uploads');
-  if (!uploadsDir.existsSync()) {
-    uploadsDir.createSync(recursive: true);
-  }
-  // Add CORS middleware to ensure browser clients can load images/files from
-  // the uploads route. This allows cross-origin requests from web apps.
-  pod.webServer.addMiddleware(CorsMiddleware(), '/uploads');
-  pod.webServer.addMiddleware(CorsMiddleware(), '/uploads/*');
-  pod.webServer.addRoute(StaticRoute.directory(uploadsDir), '/uploads');
 
   // Serve all files in the web/static relative directory under /.
   // These are used by the default web page.

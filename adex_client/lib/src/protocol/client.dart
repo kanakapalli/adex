@@ -46,6 +46,7 @@ class EndpointAdexService extends _i1.EndpointRef {
     String? extractedDataInformationPrompt,
     int? concurrency,
     int? delayBetweenBatchesMs,
+    int? maxRetries,
   }) => caller.callServerEndpoint<_i3.AdexModel>(
     'adexService',
     'processVideoFromUrl',
@@ -58,10 +59,14 @@ class EndpointAdexService extends _i1.EndpointRef {
       'extractedDataInformationPrompt': extractedDataInformationPrompt,
       'concurrency': concurrency,
       'delayBetweenBatchesMs': delayBetweenBatchesMs,
+      'maxRetries': maxRetries,
     },
   );
 
-  /// Process a video and extract relevant frames based on user prompts
+  /// Process a video and extract relevant frames based on user prompts.
+  ///
+  /// Receives video bytes directly — saves locally for fast processing,
+  /// uploads to S3 in the background. No S3 round-trip.
   _i2.Future<_i3.AdexModel> processVideo(
     _i4.ByteData video,
     String userPrompt, {
@@ -69,6 +74,9 @@ class EndpointAdexService extends _i1.EndpointRef {
     List<String>? suggestFramesToExtract,
     required bool extractToText,
     String? extractedDataInformationPrompt,
+    int? concurrency,
+    int? delayBetweenBatchesMs,
+    int? maxRetries,
   }) => caller.callServerEndpoint<_i3.AdexModel>(
     'adexService',
     'processVideo',
@@ -79,6 +87,9 @@ class EndpointAdexService extends _i1.EndpointRef {
       'suggestFramesToExtract': suggestFramesToExtract,
       'extractToText': extractToText,
       'extractedDataInformationPrompt': extractedDataInformationPrompt,
+      'concurrency': concurrency,
+      'delayBetweenBatchesMs': delayBetweenBatchesMs,
+      'maxRetries': maxRetries,
     },
   );
 
@@ -340,7 +351,15 @@ class EndpointGreeting extends _i1.EndpointRef {
       );
 }
 
-/// Endpoint for handling file uploads.
+/// Endpoint for handling file uploads to S3.
+///
+/// Primary flow (direct upload — best for large files like videos):
+///   1. Client calls [getUploadDescription] to get a presigned S3 URL
+///   2. Client uploads directly to S3 using FileUploader
+///   3. Client calls [verifyUpload] to confirm
+///
+/// Fallback flow (server-side upload — no CORS needed):
+///   1. Client calls [storeFile] with bytes — server stores to S3
 /// {@category Endpoint}
 class EndpointUpload extends _i1.EndpointRef {
   EndpointUpload(_i1.EndpointCaller caller) : super(caller);
@@ -348,23 +367,49 @@ class EndpointUpload extends _i1.EndpointRef {
   @override
   String get name => 'upload';
 
-  /// Uploads a file and returns the file path where it was saved.
+  /// Step 1: Get a presigned upload description for direct client-to-S3 upload.
   ///
-  /// [fileName] is the original name of the file.
-  /// [fileData] is the binary content of the file.
-  _i2.Future<String> uploadFile(
-    String fileName,
+  /// Uses patched S3UploadHelper with correct URL format (s3.region, not s3-region).
+  _i2.Future<String?> getUploadDescription(String storagePath) =>
+      caller.callServerEndpoint<String?>(
+        'upload',
+        'getUploadDescription',
+        {'storagePath': storagePath},
+      );
+
+  /// Step 3: Verify the direct upload completed.
+  /// Uses session.storage which correctly uses AwsS3Client (dot format).
+  _i2.Future<bool> verifyUpload(String storagePath) =>
+      caller.callServerEndpoint<bool>(
+        'upload',
+        'verifyUpload',
+        {'storagePath': storagePath},
+      );
+
+  /// Uploads file bytes through the server to S3. No CORS needed.
+  /// Uses patched S3UploadHelper to avoid the URL format bug.
+  /// Returns the public URL on success.
+  _i2.Future<String?> storeFile(
+    String storagePath,
     _i4.ByteData fileData,
-  ) => caller.callServerEndpoint<String>(
+  ) => caller.callServerEndpoint<String?>(
     'upload',
-    'uploadFile',
+    'storeFile',
     {
-      'fileName': fileName,
+      'storagePath': storagePath,
       'fileData': fileData,
     },
   );
 
-  /// Lists all uploaded files.
+  /// Gets the public URL for a stored file.
+  _i2.Future<String?> getPublicUrl(String storagePath) =>
+      caller.callServerEndpoint<String?>(
+        'upload',
+        'getPublicUrl',
+        {'storagePath': storagePath},
+      );
+
+  /// Lists uploaded files. S3 doesn't support listing via Serverpod.
   _i2.Future<List<String>> listFiles() =>
       caller.callServerEndpoint<List<String>>(
         'upload',
@@ -372,20 +417,12 @@ class EndpointUpload extends _i1.EndpointRef {
         {},
       );
 
-  /// Deletes an uploaded file.
-  _i2.Future<bool> deleteFile(String fileName) =>
+  /// Deletes a file from S3.
+  _i2.Future<bool> deleteFile(String storagePath) =>
       caller.callServerEndpoint<bool>(
         'upload',
         'deleteFile',
-        {'fileName': fileName},
-      );
-
-  /// Downloads a file and returns its content as ByteData.
-  _i2.Future<_i4.ByteData?> downloadFile(String fileName) =>
-      caller.callServerEndpoint<_i4.ByteData?>(
-        'upload',
-        'downloadFile',
-        {'fileName': fileName},
+        {'storagePath': storagePath},
       );
 }
 

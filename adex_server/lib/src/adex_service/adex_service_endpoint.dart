@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -6,6 +7,7 @@ import 'package:serverpod/serverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import '../generated/protocol.dart';
+import '../upload/s3_upload_helper.dart';
 
 /// AdexService Endpoint for processing videos and extracting frames using RAG
 ///
@@ -20,17 +22,22 @@ class AdexServiceEndpoint extends Endpoint {
   // CONFIGURATION
   // ============================================================================
 
-  static const int _concurrency = 10; // Process 10 frames concurrently (optimized for speed)
+  // Concurrency moved to rate limiting section below
   static const String _projectId = 'weedit-india';
   static const String _location = 'us-central1';
+  static const String _storageId = 'public';
 
   // Frame extraction configuration
   static const double _framesPerSecond = 2.0; // Extract 2 frames per second
 
-  // Rate limiting configuration (reduced delays since rate limits are handled)
+  // Rate limiting configuration
   static const int _maxRetries = 5;
-  static const Duration _initialRetryDelay = Duration(seconds: 1);
-  static const Duration _delayBetweenBatches = Duration(milliseconds: 100); // Reduced from 500ms
+  static const Duration _initialRetryDelay = Duration(seconds: 2);
+  static const Duration _delayBetweenBatches = Duration(milliseconds: 200);
+  static const int _concurrency = 5; // Parallel embedding calls per batch
+
+  // Runtime overrides (set per-request from UI parameters)
+  int _activeMaxRetries = _maxRetries;
 
   // Token caching
   static String? _cachedAccessToken;
@@ -40,7 +47,10 @@ class AdexServiceEndpoint extends Endpoint {
   // DEBUG HELPER
   // ============================================================================
 
+  static const bool _enableDebugLogs = true;
+
   void _debug(String message, {String emoji = '🔵'}) {
+    if (!_enableDebugLogs) return;
     final timestamp = DateTime.now().toIso8601String();
     print('$emoji [$timestamp] $message');
   }
@@ -54,7 +64,7 @@ class AdexServiceEndpoint extends Endpoint {
   Future<T> _withRetry<T>(
     Future<T> Function() operation, {
     String operationName = 'API call',
-    int maxRetries = _maxRetries,
+    int? maxRetries,
   }) async {
     int attempt = 0;
     Duration delay = _initialRetryDelay;
@@ -69,7 +79,8 @@ class AdexServiceEndpoint extends Endpoint {
             e.toString().contains('503') ||
             e.toString().contains('overloaded');
 
-        if (!isRetryable || attempt >= maxRetries) {
+        final effectiveRetries = maxRetries ?? _activeMaxRetries;
+        if (!isRetryable || attempt >= effectiveRetries) {
           _debug('❌ $operationName failed after $attempt attempts: $e', emoji: '❌');
           rethrow;
         }
@@ -105,6 +116,7 @@ class AdexServiceEndpoint extends Endpoint {
     String? extractedDataInformationPrompt,
     int? concurrency,
     int? delayBetweenBatchesMs,
+    int? maxRetries,
   }) async {
     _debug('🚀 processVideoFromUrl called', emoji: '📥');
     _debug('   📹 videoUrl: $videoUrl', emoji: '📥');
@@ -114,6 +126,7 @@ class AdexServiceEndpoint extends Endpoint {
     _debug('   📄 extractToText: $extractToText', emoji: '📥');
     _debug('   ⚡ concurrency: ${concurrency ?? _concurrency}', emoji: '📥');
     _debug('   ⏱️  delayBetweenBatchesMs: ${delayBetweenBatchesMs ?? _delayBetweenBatches.inMilliseconds}', emoji: '📥');
+    _debug('   🔄 maxRetries: ${maxRetries ?? _maxRetries}', emoji: '📥');
 
     return _processVideoInternal(
       session,
@@ -124,11 +137,15 @@ class AdexServiceEndpoint extends Endpoint {
       extractToText: extractToText,
       extractedDataInformationPrompt: extractedDataInformationPrompt,
       concurrency: concurrency,
+      maxRetries: maxRetries,
       delayBetweenBatchesMs: delayBetweenBatchesMs,
     );
   }
 
-  /// Process a video and extract relevant frames based on user prompts
+  /// Process a video and extract relevant frames based on user prompts.
+  ///
+  /// Receives video bytes directly — saves locally for fast processing,
+  /// uploads to S3 in the background. No S3 round-trip.
   Future<AdexModel> processVideo(
     Session session,
     ByteData video,
@@ -137,47 +154,52 @@ class AdexServiceEndpoint extends Endpoint {
     List<String>? suggestFramesToExtract,
     bool extractToText = false,
     String? extractedDataInformationPrompt,
+    int? concurrency,
+    int? delayBetweenBatchesMs,
+    int? maxRetries,
   }) async {
     _debug('🚀 processVideo called (with ByteData)', emoji: '📥');
     _debug('   📦 video size: ${video.lengthInBytes} bytes (${(video.lengthInBytes / 1024 / 1024).toStringAsFixed(2)} MB)', emoji: '📥');
 
-    // Generate unique processing ID
-    final processingId = '${DateTime.now().millisecondsSinceEpoch}_${_generateRandomId()}';
-    _debug('   🆔 Generated processingId: $processingId', emoji: '📥');
-
-    // Upload video first
-    _debug('📤 Uploading video...', emoji: '⬆️');
-    final videoUrl = await _uploadVideo(session, video, processingId);
-    _debug('✅ Video uploaded to: $videoUrl', emoji: '⬆️');
-
     return _processVideoInternal(
       session,
-      videoUrl,
+      null,
       userPrompt,
+      videoBytes: video,
       whatDoesThisVideoContain: whatDoesThisVideoContain,
       suggestFramesToExtract: suggestFramesToExtract,
       extractToText: extractToText,
       extractedDataInformationPrompt: extractedDataInformationPrompt,
+      concurrency: concurrency,
+      delayBetweenBatchesMs: delayBetweenBatchesMs,
+      maxRetries: maxRetries,
     );
   }
 
-  /// Internal method to process video from URL
+  /// Internal method to process video.
+  ///
+  /// If [videoBytes] is provided, saves locally for processing and uploads to
+  /// S3 in the background (no S3 round-trip). Otherwise downloads from S3
+  /// using [videoStoragePath].
   Future<AdexModel> _processVideoInternal(
     Session session,
-    String videoUrl,
+    String? videoStoragePath,
     String userPrompt, {
+    ByteData? videoBytes,
     String? whatDoesThisVideoContain,
     List<String>? suggestFramesToExtract,
     bool extractToText = false,
     String? extractedDataInformationPrompt,
     int? concurrency,
     int? delayBetweenBatchesMs,
+    int? maxRetries,
   }) async {
     // Use provided values or defaults
     final effectiveConcurrency = concurrency ?? _concurrency;
     final effectiveDelay = delayBetweenBatchesMs != null
         ? Duration(milliseconds: delayBetweenBatchesMs)
         : _delayBetweenBatches;
+    _activeMaxRetries = maxRetries ?? _maxRetries;
 
     final overallTimer = Stopwatch()..start();
 
@@ -199,16 +221,13 @@ class AdexServiceEndpoint extends Endpoint {
 
     _debug('📋 Processing Configuration:', emoji: '⚙️');
     _debug('   🆔 Processing ID: $processingId', emoji: '⚙️');
-    _debug('   📹 Video URL: $videoUrl', emoji: '⚙️');
+    _debug('   📹 Video source: ${videoBytes != null ? "local bytes (${(videoBytes.lengthInBytes / 1024 / 1024).toStringAsFixed(2)} MB)" : "S3: $videoStoragePath"}', emoji: '⚙️');
     _debug('   💬 User Prompt: ${userPrompt.substring(0, userPrompt.length > 50 ? 50 : userPrompt.length)}...', emoji: '⚙️');
     _debug('   📄 Extract to Text: $extractToText', emoji: '⚙️');
     _debug('   🔢 Concurrency: $effectiveConcurrency frames', emoji: '⚙️');
     _debug('   ⏱️  Delay between batches: ${effectiveDelay.inMilliseconds}ms', emoji: '⚙️');
+    _debug('   🔄 Max retries: $_activeMaxRetries', emoji: '⚙️');
 
-    session.log('========================================');
-    session.log('Starting AdexService video processing...');
-    session.log('Processing ID: $processingId');
-    session.log('========================================');
 
     AdexModel? adexModel;
     Directory? tempDir;
@@ -224,11 +243,15 @@ class AdexServiceEndpoint extends Endpoint {
 
       final createTimer = Stopwatch()..start();
 
+      // Generate storage path for the video
+      final videoStoragePathResolved = videoStoragePath
+          ?? 'uploads/videos/${processingId}_video.mp4';
+
       _debug('💾 Inserting AdexModel into database...', emoji: '🗄️');
       adexModel = await AdexModel.db.insertRow(
         session,
         AdexModel(
-          videoUrl: videoUrl,
+          videoUrl: videoStoragePathResolved,
           processingId: processingId,
           userPrompt: userPrompt,
           whatDoesThisVideoContain: whatDoesThisVideoContain,
@@ -278,13 +301,14 @@ class AdexServiceEndpoint extends Endpoint {
 
       final result = await _extractFramesAndGenerateEmbeddings(
         session,
-        videoUrl,
+        videoStoragePathResolved,
         processingId,
         adexModel.id!,
         accessToken,
         tempDir,
         effectiveConcurrency,
         effectiveDelay,
+        videoBytes: videoBytes,
       );
 
       embeddingTimer.stop();
@@ -361,11 +385,22 @@ class AdexServiceEndpoint extends Endpoint {
         _debug('   🖼️  ${frameData['frameType']}: ${(frameData['extractedFrameUrls'] as List).length} frames', emoji: '');
       }
 
+      // Strip localFramePaths from extractedFramesData before saving to DB
+      final extractedFramesForDb = extractedFramesData.map((frameData) {
+        final cleaned = Map<String, dynamic>.from(frameData);
+        cleaned.remove('localFramePaths');
+        return cleaned;
+      }).toList();
+
+      // Resolve video public URL from S3
+      final videoPublicUrl = S3UploadHelper.instance.getPublicUrl(videoStoragePathResolved);
+      adexModel = adexModel.copyWith(videoUrl: videoPublicUrl);
+
       // Update AdexModel with extracted frames
       _debug('💾 Updating AdexModel with extracted frames...', emoji: '🗄️');
       adexModel = await AdexModel.db.updateRow(
         session,
-        adexModel.copyWith(extractedFrames: jsonEncode(extractedFramesData)),
+        adexModel.copyWith(extractedFrames: jsonEncode(extractedFramesForDb)),
       );
       _debug('✅ AdexModel updated!', emoji: '✓');
 
@@ -449,10 +484,6 @@ class AdexServiceEndpoint extends Endpoint {
       _debug('╚══════════════════════════════════════════════════════════════╝', emoji: '🎉');
       _debug('', emoji: '');
 
-      session.log('========================================');
-      session.log('⏱️  TOTAL PROCESSING TIME: ${overallTimer.elapsed.inMinutes}m ${overallTimer.elapsed.inSeconds % 60}s');
-      session.log('Video processing complete!');
-      session.log('========================================');
 
       return adexModel;
     } catch (e, stackTrace) {
@@ -466,8 +497,6 @@ class AdexServiceEndpoint extends Endpoint {
         _debug('   $line', emoji: '');
       }
 
-      session.log('Error processing video: $e', level: LogLevel.error);
-      session.log('Stack trace: $stackTrace', level: LogLevel.error);
 
       // Update status to failed
       if (adexModel != null) {
@@ -491,7 +520,6 @@ class AdexServiceEndpoint extends Endpoint {
           _debug('✅ Temp directory deleted', emoji: '✓');
         } catch (e) {
           _debug('⚠️  Warning: Failed to cleanup temp directory: $e', emoji: '⚠️');
-          session.log('Warning: Failed to cleanup temp directory: $e', level: LogLevel.warning);
         }
       }
     }
@@ -523,74 +551,63 @@ class AdexServiceEndpoint extends Endpoint {
   }
 
   // ============================================================================
-  // PRIVATE METHODS - Video Upload
-  // ============================================================================
-
-  /// Upload video to storage and return URL
-  Future<String> _uploadVideo(Session session, ByteData videoData, String processingId) async {
-    _debug('📤 _uploadVideo: Starting upload...', emoji: '⬆️');
-    _debug('   📦 Size: ${videoData.lengthInBytes} bytes', emoji: '⬆️');
-
-    final uploadsDir = Directory('uploads/videos/$processingId');
-    if (!await uploadsDir.exists()) {
-      _debug('   📁 Creating directory: ${uploadsDir.path}', emoji: '⬆️');
-      await uploadsDir.create(recursive: true);
-    }
-
-    final videoFileName = 'video_$processingId.mp4';
-    final videoFile = File(path.join(uploadsDir.path, videoFileName));
-
-    _debug('   💾 Writing to: ${videoFile.path}', emoji: '⬆️');
-    await videoFile.writeAsBytes(videoData.buffer.asUint8List());
-
-    final resultUrl = '/uploads/videos/$processingId/$videoFileName';
-    _debug('   ✅ Upload complete: $resultUrl', emoji: '⬆️');
-
-    return resultUrl;
-  }
-
-  // ============================================================================
   // PRIVATE METHODS - Frame Extraction & Embedding
   // ============================================================================
 
-  /// Extract frames at 2 FPS and generate embeddings
+  /// Extract frames at 2 FPS and generate embeddings.
+  ///
+  /// If [videoBytes] is provided, saves locally and uploads to S3 in the
+  /// background. Otherwise downloads from S3.
   Future<Map<String, dynamic>> _extractFramesAndGenerateEmbeddings(
     Session session,
-    String videoUrl,
+    String videoStoragePath,
     String processingId,
     int adexModelId,
     String accessToken,
     Directory tempDir,
     int concurrency,
-    Duration delayBetweenBatches,
-  ) async {
+    Duration delayBetweenBatches, {
+    ByteData? videoBytes,
+  }) async {
     _debug('🎞️  _extractFramesAndGenerateEmbeddings: Starting...', emoji: '🎬');
 
     final framesDir = Directory(path.join(tempDir.path, 'frames'));
     await framesDir.create();
     _debug('   📁 Frames directory: ${framesDir.path}', emoji: '🎬');
 
-    // Get video file path from URL
-    final videoPath = videoUrl.startsWith('/')
-        ? videoUrl.substring(1)
-        : videoUrl;
-    _debug('   📹 Video path: $videoPath', emoji: '🎬');
+    final videoFile = File(path.join(tempDir.path, 'video.mp4'));
 
-    // Check if video file exists locally
-    File videoFile;
-    if (await File(videoPath).exists()) {
-      _debug('   ✅ Video file found locally', emoji: '🎬');
-      videoFile = File(videoPath);
+    if (videoBytes != null) {
+      // Save locally — no S3 download needed
+      _debug('   📹 Saving video locally (${(videoBytes.lengthInBytes / 1024 / 1024).toStringAsFixed(2)} MB)...', emoji: '🎬');
+      await videoFile.writeAsBytes(videoBytes.buffer.asUint8List());
+      _debug('   ✅ Video saved locally: ${videoFile.path}', emoji: '🎬');
+
+      // Upload to S3 in the background (don't wait)
+      _debug('   ☁️  Uploading video to S3 in background: $videoStoragePath', emoji: '⬆️');
+      unawaited(S3UploadHelper.instance.uploadData(
+        data: videoBytes,
+        uploadDst: videoStoragePath,
+      ).then((_) {
+        _debug('   ✅ Background S3 upload complete: $videoStoragePath', emoji: '⬆️');
+      }).catchError((e) {
+        _debug('   ⚠️  Background S3 upload failed: $e', emoji: '⚠️');
+      }));
     } else {
-      _debug('   ⬇️  Video not local, downloading from: $videoUrl', emoji: '🎬');
-      final response = await http.get(Uri.parse(videoUrl));
-      if (response.statusCode != 200) {
-        _debug('   ❌ Download failed: ${response.statusCode}', emoji: '❌');
-        throw Exception('Failed to download video: ${response.statusCode}');
+      // Download from S3
+      _debug('   📹 Video storage path: $videoStoragePath', emoji: '🎬');
+      _debug('   ⬇️  Downloading video from S3...', emoji: '🎬');
+
+      final s3Bytes = await session.storage.retrieveFile(
+        storageId: _storageId,
+        path: videoStoragePath,
+      );
+      if (s3Bytes == null) {
+        _debug('   ❌ Failed to retrieve video from S3', emoji: '❌');
+        throw Exception('Failed to retrieve video from S3: $videoStoragePath');
       }
-      videoFile = File(path.join(tempDir.path, 'video.mp4'));
-      await videoFile.writeAsBytes(response.bodyBytes);
-      _debug('   ✅ Video downloaded: ${videoFile.path}', emoji: '🎬');
+      await videoFile.writeAsBytes(s3Bytes.buffer.asUint8List());
+      _debug('   ✅ Video downloaded to temp: ${videoFile.path} (${s3Bytes.lengthInBytes} bytes)', emoji: '🎬');
     }
 
     // Get video duration
@@ -662,7 +679,7 @@ class AdexServiceEndpoint extends Endpoint {
 
         allFrameObjects.add(VideoFrameEmbedding(
           adexModelId: adexModelId,
-          videoUrl: videoUrl,
+          videoUrl: videoStoragePath,
           processingId: processingId,
           frameNumber: frameIndex,
           timestamp: timestamp,
@@ -672,7 +689,6 @@ class AdexServiceEndpoint extends Endpoint {
       }
 
       _debug('   ✅ Batch $batchNumber complete (${i + embeddings.length}/${frameFiles.length} total)', emoji: '🧠');
-      session.log('Generated ${i + embeddings.length}/${frameFiles.length} embeddings');
 
       // Small delay between batches to avoid rate limiting
       if (i + concurrency < frameFiles.length) {
@@ -919,13 +935,6 @@ Example output:
 
     _debug('   📋 Frame types to extract: ${frameTypes.keys.toList()}', emoji: '🔍');
 
-    // Create output directory for extracted frames
-    final outputDir = Directory('uploads/extracted_frames/$adexModelId');
-    if (!await outputDir.exists()) {
-      await outputDir.create(recursive: true);
-      _debug('   📁 Created output dir: ${outputDir.path}', emoji: '🔍');
-    }
-
     // Step 1: Generate ALL text embeddings in PARALLEL
     _debug('   🧠 Generating embeddings for all ${frameTypes.length} frame types in parallel...', emoji: '🔍');
     final descriptions = <String, String>{};
@@ -968,9 +977,11 @@ Example output:
         return null;
       }
 
-      // Copy extracted frames to output directory
+      // Upload extracted frames to S3
+      _debug('   📦 Uploading ${frames.length} frames to S3: ${S3UploadHelper.instance.endpoint}', emoji: '📤');
       final extractedFrameUrls = <String>[];
       final extractedFrameTimestamps = <double>[];
+      final localFramePaths = <String>[];
 
       for (int i = 0; i < frames.length; i++) {
         final frame = frames[i];
@@ -978,14 +989,33 @@ Example output:
 
         if (await sourceFile.exists()) {
           final outputFileName = '${frameType}_${i + 1}_${DateTime.now().millisecondsSinceEpoch}_$i.png';
-          final outputPath = path.join(outputDir.path, outputFileName);
-          await sourceFile.copy(outputPath);
-          extractedFrameUrls.add('/uploads/extracted_frames/$adexModelId/$outputFileName');
+          final s3Path = 'extracted_frames/$adexModelId/$outputFileName';
+
+          // Upload frame to S3 (using patched uploader)
+          final frameBytes = await sourceFile.readAsBytes();
+          _debug('      Uploading frame $i: $s3Path (${frameBytes.length} bytes)', emoji: '📤');
+          try {
+            await S3UploadHelper.instance.uploadData(
+              data: ByteData.view(frameBytes.buffer),
+              uploadDst: s3Path,
+              contentType: 'image/png',
+            );
+            _debug('      ✅ Frame $i uploaded successfully', emoji: '📤');
+          } catch (e) {
+            _debug('      ❌ Frame $i upload FAILED: $e', emoji: '📤');
+            rethrow;
+          }
+
+          // Get public URL
+          final publicUrl = S3UploadHelper.instance.getPublicUrl(s3Path);
+          _debug('      📎 Frame $i URL: $publicUrl', emoji: '📤');
+          extractedFrameUrls.add(publicUrl);
           extractedFrameTimestamps.add(frame.timestamp);
+          localFramePaths.add(frame.framePath);
         }
       }
 
-      _debug('   ✅ $frameType: ${extractedFrameUrls.length} frames extracted', emoji: '🔍');
+      _debug('   ✅ $frameType: ${extractedFrameUrls.length} frames uploaded to S3', emoji: '🔍');
 
       return {
         'frameType': frameType,
@@ -993,6 +1023,7 @@ Example output:
         'extractFrameCount': extractFrameCount,
         'extractedFrameUrls': extractedFrameUrls,
         'extractedFrameTimestamps': extractedFrameTimestamps,
+        'localFramePaths': localFramePaths,
       };
     });
 
@@ -1020,41 +1051,41 @@ Example output:
     _debug('📝 _extractTextFromFrames: Starting text extraction...', emoji: '📝');
     _debug('   📋 Processing ${extractedFramesData.length} frame types in a SINGLE API call', emoji: '📝');
 
-    // Collect all image URLs first
-    final allImageUrls = <String>[];
+    // Collect all local frame paths for reading
+    final allLocalPaths = <String>[];
     final frameTypeDescriptions = <String>[];
 
     for (final frameData in extractedFramesData) {
       final frameType = frameData['frameType'] as String;
       final description = frameData['description'] as String;
-      final extractedFrameUrls = frameData['extractedFrameUrls'] as List<dynamic>;
+      final localFramePaths = frameData['localFramePaths'] as List<dynamic>?;
 
-      if (extractedFrameUrls.isEmpty) {
-        _debug('   ⏭️  Skipping $frameType (no frames)', emoji: '📝');
+      if (localFramePaths == null || localFramePaths.isEmpty) {
+        _debug('   ⏭️  Skipping $frameType (no local frames)', emoji: '📝');
         continue;
       }
 
-      final startIndex = allImageUrls.length;
-      for (final url in extractedFrameUrls) {
-        allImageUrls.add((url as String).startsWith('/') ? url.substring(1) : url);
+      final startIndex = allLocalPaths.length;
+      for (final localPath in localFramePaths) {
+        allLocalPaths.add(localPath as String);
       }
-      final endIndex = allImageUrls.length - 1;
+      final endIndex = allLocalPaths.length - 1;
 
       frameTypeDescriptions.add('''
 ## $frameType (Images ${startIndex + 1} to ${endIndex + 1})
 Description: $description
 ''');
-      _debug('   📎 Added ${extractedFrameUrls.length} images for: $frameType', emoji: '📝');
+      _debug('   📎 Added ${localFramePaths.length} images for: $frameType', emoji: '📝');
     }
 
-    if (allImageUrls.isEmpty) {
+    if (allLocalPaths.isEmpty) {
       _debug('   ⚠️  No images to process', emoji: '⚠️');
       return jsonEncode({});
     }
 
-    // Read ALL image files in PARALLEL
-    _debug('   ⚡ Reading ${allImageUrls.length} images in parallel...', emoji: '📝');
-    final imageReadFutures = allImageUrls.map((filePath) async {
+    // Read ALL image files in PARALLEL from temp directory
+    _debug('   ⚡ Reading ${allLocalPaths.length} images in parallel...', emoji: '📝');
+    final imageReadFutures = allLocalPaths.map((filePath) async {
       final file = File(filePath);
       if (await file.exists()) {
         final imageBytes = await file.readAsBytes();
@@ -1190,7 +1221,6 @@ Return ONLY valid JSON with no markdown formatting or explanation.
       return jsonString;
     } catch (e) {
       _debug('   ❌ Error extracting text: $e', emoji: '❌');
-      session.log('Error extracting text: $e', level: LogLevel.error);
 
       // Return empty JSON on error
       return jsonEncode({});
@@ -1210,38 +1240,16 @@ Return ONLY valid JSON with no markdown formatting or explanation.
     _debug('🧹 _cleanupTemporaryData: Starting cleanup...', emoji: '🧹');
 
     try {
-      // Get frames for this processing run
-      _debug('   🔍 Finding frames to delete...', emoji: '🧹');
-      final frames = await VideoFrameEmbedding.db.find(
+      // Delete database entries (no local files to clean — temp dir is cleaned in finally block)
+      _debug('   💾 Deleting embedding database entries...', emoji: '🧹');
+      final deletedCount = await VideoFrameEmbedding.db.deleteWhere(
         session,
         where: (t) => t.adexModelId.equals(adexModelId) & t.processingId.equals(processingId),
       );
 
-      _debug('   📊 Found ${frames.length} frames to clean up', emoji: '🧹');
-
-      // Delete frame files from disk (temp files only)
-      int deletedFiles = 0;
-      for (final frame in frames) {
-        final file = File(frame.framePath);
-        if (await file.exists() && (frame.framePath.contains('/tmp/') || frame.framePath.contains('\\Temp\\'))) {
-          await file.delete();
-          deletedFiles++;
-        }
-      }
-      _debug('   🗑️  Deleted $deletedFiles temp files from disk', emoji: '🧹');
-
-      // Delete database entries
-      _debug('   💾 Deleting ${frames.length} database entries...', emoji: '🧹');
-      await VideoFrameEmbedding.db.deleteWhere(
-        session,
-        where: (t) => t.adexModelId.equals(adexModelId) & t.processingId.equals(processingId),
-      );
-
-      _debug('   ✅ Cleanup complete: ${frames.length} embeddings removed', emoji: '✓');
-      session.log('Cleaned up ${frames.length} temporary frame embeddings');
+      _debug('   ✅ Cleanup complete:  embeddings removed', emoji: '✓');
     } catch (e) {
       _debug('   ⚠️  Cleanup error: $e', emoji: '⚠️');
-      session.log('Warning: Cleanup error: $e', level: LogLevel.warning);
     }
   }
 

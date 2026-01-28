@@ -17,10 +17,12 @@ jwtRefresh:
 greeting:
   - hello:
 upload:
-  - uploadFile:
+  - getUploadDescription:
+  - verifyUpload:
+  - storeFile:
+  - getPublicUrl:
   - listFiles:
   - deleteFile:
-  - downloadFile:
 videoExtraction:
   - processVideoComplete:
   - extractVideoFrames:
