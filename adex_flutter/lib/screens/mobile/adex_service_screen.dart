@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:adex_client/adex_client.dart';
 import 'package:camera/camera.dart';
@@ -7,6 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 import '../../main.dart';
+import 'history_screen.dart';
+import 'processing_screen.dart';
+import 'result_screen.dart';
 
 enum MobileViewState { camera, preview, processing, results, history }
 
@@ -33,7 +35,6 @@ class _MobileAdexServiceScreenState extends State<MobileAdexServiceScreen>
   Timer? _recordingTimer;
 
   // Processing
-  bool _isProcessing = false;
   double _processingProgress = 0.0;
   String _processingStatus = '';
   AdexModel? _result;
@@ -218,7 +219,6 @@ Return the data in a structured JSON format.''',
 
     setState(() {
       _viewState = MobileViewState.processing;
-      _isProcessing = true;
       _errorMessage = null;
       _result = null;
       _processingProgress = 0.0;
@@ -270,7 +270,6 @@ Return the data in a structured JSON format.''',
 
         setState(() {
           _result = result;
-          _isProcessing = false;
           _viewState = MobileViewState.results;
         });
 
@@ -282,7 +281,6 @@ Return the data in a structured JSON format.''',
     } catch (e) {
       setState(() {
         _errorMessage = 'Processing failed: $e';
-        _isProcessing = false;
         _viewState = MobileViewState.preview;
       });
     }
@@ -322,7 +320,7 @@ Return the data in a structured JSON format.''',
     _videoPlayerController = null;
 
     if (_recordedVideoPath != null) {
-      File(_recordedVideoPath!).delete().catchError((_) {});
+      File(_recordedVideoPath!).delete().ignore();
     }
 
     setState(() {
@@ -366,14 +364,50 @@ Return the data in a structured JSON format.''',
     );
   }
 
+  void _handleResultBack() {
+    if (_selectedHistoryModel != null) {
+      setState(() {
+        _selectedHistoryModel = null;
+        _viewState = MobileViewState.history;
+      });
+    } else {
+      _resetToCamera();
+    }
+  }
+
+  void _handleHistoryItemTap(AdexModel model) {
+    setState(() {
+      _selectedHistoryModel = model;
+      _viewState = MobileViewState.results;
+    });
+    _initializeNetworkVideoPlayer(model.videoUrl);
+  }
+
   @override
   Widget build(BuildContext context) {
     return switch (_viewState) {
       MobileViewState.camera => _buildCameraView(),
       MobileViewState.preview => _buildPreviewView(),
-      MobileViewState.processing => _buildProcessingView(),
-      MobileViewState.results => _buildResultsView(),
-      MobileViewState.history => _buildHistoryView(),
+      MobileViewState.processing => ProcessingScreen(
+        progress: _processingProgress,
+        status: _processingStatus,
+        onCancel: _resetToCamera,
+      ),
+      MobileViewState.results => ResultScreen(
+        model: _selectedHistoryModel ?? _result!,
+        videoController: _videoPlayerController,
+        onNewCapture: _resetToCamera,
+        onBack: _handleResultBack,
+        isFromHistory: _selectedHistoryModel != null,
+      ),
+      MobileViewState.history => HistoryScreen(
+        models: _models,
+        isLoading: _isLoadingHistory,
+        onBack: _resetToCamera,
+        onRefresh: _loadHistory,
+        onItemTap: _handleHistoryItemTap,
+        onCaptureVideo: _resetToCamera,
+      ),
     };
   }
 
@@ -797,303 +831,6 @@ Return the data in a structured JSON format.''',
     );
   }
 
-  // ============ PROCESSING VIEW ============
-  Widget _buildProcessingView() {
-    final colors = Theme.of(context).colorScheme;
-
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(32),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 120,
-                  height: 120,
-                  child: Stack(
-                    alignment: Alignment.center,
-                    children: [
-                      CircularProgressIndicator(
-                        value: _processingProgress,
-                        strokeWidth: 8,
-                        backgroundColor: Colors.white24,
-                        color: colors.primary,
-                      ),
-                      Text(
-                        '${(_processingProgress * 100).toInt()}%',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 32),
-                Text(
-                  _processingStatus,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'This may take a moment',
-                  style: TextStyle(color: Colors.white54),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ============ RESULTS VIEW ============
-  Widget _buildResultsView() {
-    final colors = Theme.of(context).colorScheme;
-    final model = _selectedHistoryModel ?? _result;
-
-    if (model == null) {
-      return Scaffold(
-        body: Center(child: Text('No results', style: TextStyle(color: colors.onSurface))),
-      );
-    }
-
-    return Scaffold(
-      backgroundColor: colors.surface,
-      appBar: AppBar(
-        backgroundColor: colors.surface,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () {
-            if (_selectedHistoryModel != null) {
-              setState(() {
-                _selectedHistoryModel = null;
-                _viewState = MobileViewState.history;
-              });
-            } else {
-              _resetToCamera();
-            }
-          },
-        ),
-        title: const Text('Results'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.copy),
-            onPressed: () {
-              final json = const JsonEncoder.withIndent('  ').convert(model.toJson());
-              Clipboard.setData(ClipboardData(text: json));
-              _showSnackBar('Copied to clipboard');
-            },
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Success badge
-            _buildSuccessCard(colors, model),
-            const SizedBox(height: 16),
-
-            // Video player (for results from current session)
-            if (_videoPlayerController?.value.isInitialized == true && _selectedHistoryModel == null)
-              _buildVideoCard(colors),
-
-            // Extracted frames
-            if (model.extractedFrames != null) ...[
-              const SizedBox(height: 16),
-              _buildFramesCard(colors, model),
-            ],
-
-            // Extracted data
-            if (model.extractedText != null) ...[
-              const SizedBox(height: 16),
-              _buildDataCard(colors, model),
-            ],
-
-            // Raw JSON
-            const SizedBox(height: 16),
-            _buildJsonCard(colors, model),
-
-            const SizedBox(height: 24),
-
-            // New capture button
-            FilledButton.icon(
-              onPressed: _resetToCamera,
-              icon: const Icon(Icons.videocam),
-              label: const Text('Capture New Video'),
-              style: FilledButton.styleFrom(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-              ),
-            ),
-
-            const SizedBox(height: 32),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ============ HISTORY VIEW ============
-  Widget _buildHistoryView() {
-    final colors = Theme.of(context).colorScheme;
-
-    return Scaffold(
-      backgroundColor: colors.surface,
-      appBar: AppBar(
-        backgroundColor: colors.surface,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _resetToCamera,
-        ),
-        title: const Text('History'),
-        centerTitle: true,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _loadHistory,
-          ),
-        ],
-      ),
-      body: _isLoadingHistory
-          ? const Center(child: CircularProgressIndicator())
-          : _models == null || _models!.isEmpty
-              ? _buildEmptyHistory(colors)
-              : RefreshIndicator(
-                  onRefresh: _loadHistory,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _models!.length,
-                    itemBuilder: (context, index) {
-                      final model = _models![index];
-                      return _buildHistoryCard(model, colors);
-                    },
-                  ),
-                ),
-    );
-  }
-
-  Widget _buildEmptyHistory(ColorScheme colors) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: colors.primaryContainer.withValues(alpha: 0.3),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(Icons.folder_open_outlined, size: 48, color: colors.primary),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'No results yet',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                color: colors.onSurface,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Capture a video to see\nextracted data here',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 15),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _resetToCamera,
-              icon: const Icon(Icons.videocam),
-              label: const Text('Capture Video'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHistoryCard(AdexModel model, ColorScheme colors) {
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      elevation: 0,
-      color: colors.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: colors.outlineVariant.withValues(alpha: 0.5)),
-      ),
-      child: InkWell(
-        onTap: () {
-          setState(() {
-            _selectedHistoryModel = model;
-            _viewState = MobileViewState.results;
-          });
-          _initializeNetworkVideoPlayer(model.videoUrl);
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  _buildStatusChip(model.status, colors),
-                  const Spacer(),
-                  Text(
-                    _formatDate(model.createdAt),
-                    style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Text(
-                model.userPrompt,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: colors.onSurface,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  Icon(Icons.tag, size: 14, color: colors.onSurfaceVariant),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      model.processingId.substring(0, 12),
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontFamily: 'monospace',
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  Icon(Icons.chevron_right, size: 20, color: colors.onSurfaceVariant),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   // ============ SETTINGS SHEET ============
   Widget _buildSettingsSheet() {
     final colors = Theme.of(context).colorScheme;
@@ -1329,366 +1066,9 @@ Return the data in a structured JSON format.''',
     );
   }
 
-  // ============ RESULT CARDS ============
-  Widget _buildSuccessCard(ColorScheme colors, AdexModel model) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFF10B981).withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFF10B981).withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: const BoxDecoration(
-              color: Color(0xFF10B981),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.check, color: Colors.white, size: 20),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  model.status == 'completed' ? 'Processing Complete' : model.status.toUpperCase(),
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                ),
-                Text(
-                  'ID: ${model.processingId.substring(0, 12)}...',
-                  style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildVideoCard(ColorScheme colors) {
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: AspectRatio(
-          aspectRatio: _videoPlayerController!.value.aspectRatio,
-          child: GestureDetector(
-            onTap: () {
-              setState(() {
-                _videoPlayerController!.value.isPlaying
-                    ? _videoPlayerController!.pause()
-                    : _videoPlayerController!.play();
-              });
-            },
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                VideoPlayer(_videoPlayerController!),
-                if (!_videoPlayerController!.value.isPlaying)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: const BoxDecoration(
-                      color: Colors.black45,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(Icons.play_arrow, size: 32, color: Colors.white),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildFramesCard(ColorScheme colors, AdexModel model) {
-    List<dynamic> frames;
-    try {
-      frames = jsonDecode(model.extractedFrames!) as List<dynamic>;
-    } catch (e) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.photo_library, size: 20, color: colors.primary),
-              const SizedBox(width: 8),
-              const Text('Extracted Frames', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...frames.map((frame) {
-            final f = frame as Map<String, dynamic>;
-            final frameType = f['frameType'] as String;
-            final urls = (f['extractedFrameUrls'] as List<dynamic>).cast<String>();
-
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: colors.primaryContainer,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      frameType.replaceAll('_', ' ').toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: colors.onPrimaryContainer,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    height: 80,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      itemCount: urls.length,
-                      itemBuilder: (context, index) {
-                        return GestureDetector(
-                          onTap: () => _showImageViewer(urls[index]),
-                          child: Container(
-                            width: 100,
-                            margin: EdgeInsets.only(right: index < urls.length - 1 ? 8 : 0),
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: colors.outlineVariant),
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(7),
-                              child: Image.network(
-                                urls[index],
-                                fit: BoxFit.cover,
-                                errorBuilder: (_, __, ___) => Center(
-                                  child: Icon(Icons.broken_image, color: colors.error),
-                                ),
-                              ),
-                            ),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDataCard(ColorScheme colors, AdexModel model) {
-    Map<String, dynamic>? data;
-    try {
-      data = jsonDecode(model.extractedText!) as Map<String, dynamic>;
-    } catch (e) {
-      data = null;
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.data_object, size: 20, color: colors.primary),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text('Extracted Data', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              ),
-              IconButton(
-                icon: const Icon(Icons.copy, size: 18),
-                onPressed: () {
-                  Clipboard.setData(ClipboardData(text: model.extractedText!));
-                  _showSnackBar('Data copied');
-                },
-                visualDensity: VisualDensity.compact,
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          if (data != null)
-            ...data.entries.map((entry) {
-              final value = entry.value is Map || entry.value is List
-                  ? const JsonEncoder.withIndent('  ').convert(entry.value)
-                  : entry.value.toString();
-
-              return ExpansionTile(
-                tilePadding: EdgeInsets.zero,
-                title: Text(
-                  entry.key.replaceAll('_', ' ').toUpperCase(),
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
-                ),
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: colors.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: SelectableText(
-                      value,
-                      style: TextStyle(fontSize: 12, fontFamily: 'monospace', color: colors.onSurface),
-                    ),
-                  ),
-                ],
-              );
-            })
-          else
-            Text(model.extractedText!, style: TextStyle(fontSize: 13, color: colors.onSurface)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildJsonCard(ColorScheme colors, AdexModel model) {
-    final json = const JsonEncoder.withIndent('  ').convert(model.toJson());
-
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: ExpansionTile(
-        tilePadding: const EdgeInsets.symmetric(horizontal: 16),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        leading: Icon(Icons.code, size: 20, color: colors.primary),
-        title: const Text('Raw JSON', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-        children: [
-          Container(
-            width: double.infinity,
-            constraints: const BoxConstraints(maxHeight: 250),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: colors.surfaceContainerHighest,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: SingleChildScrollView(
-              child: SelectableText(
-                json,
-                style: TextStyle(fontSize: 11, fontFamily: 'monospace', color: colors.onSurface),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusChip(String status, ColorScheme colors) {
-    Color bgColor;
-    Color textColor;
-    IconData icon;
-
-    switch (status.toLowerCase()) {
-      case 'completed':
-        bgColor = const Color(0xFF10B981).withValues(alpha: 0.15);
-        textColor = const Color(0xFF10B981);
-        icon = Icons.check_circle;
-        break;
-      case 'processing':
-        bgColor = colors.primaryContainer;
-        textColor = colors.primary;
-        icon = Icons.sync;
-        break;
-      case 'failed':
-        bgColor = colors.errorContainer;
-        textColor = colors.error;
-        icon = Icons.error;
-        break;
-      default:
-        bgColor = colors.surfaceContainerHighest;
-        textColor = colors.onSurfaceVariant;
-        icon = Icons.schedule;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: bgColor, borderRadius: BorderRadius.circular(20)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: textColor),
-          const SizedBox(width: 6),
-          Text(
-            status.toUpperCase(),
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: textColor),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showImageViewer(String url) {
-    showDialog(
-      context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: Stack(
-          children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: InteractiveViewer(child: Image.network(url, fit: BoxFit.contain)),
-            ),
-            Positioned(
-              top: 8,
-              right: 8,
-              child: IconButton.filled(
-                onPressed: () => Navigator.pop(ctx),
-                icon: const Icon(Icons.close),
-                style: IconButton.styleFrom(
-                  backgroundColor: Colors.black54,
-                  foregroundColor: Colors.white,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showSnackBar(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), behavior: SnackBarBehavior.floating, duration: const Duration(seconds: 2)),
-    );
-  }
-
   String _formatDuration(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$m:$s';
-  }
-
-  String _formatDate(DateTime date) {
-    return '${date.day}/${date.month}/${date.year}';
   }
 }
