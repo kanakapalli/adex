@@ -37,6 +37,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
               selectedIndex: _selectedIndex,
               onDestinationSelected: _onItemTapped,
               labelType: NavigationRailLabelType.all,
+              leading: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Image.asset(
+                  'assets/logo/adex_logo.png',
+                  width: 40,
+                  height: 40,
+                ),
+              ),
               destinations: const [
                 NavigationRailDestination(
                   icon: Icon(Icons.video_library_outlined),
