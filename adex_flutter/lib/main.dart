@@ -1,6 +1,6 @@
 import 'dart:io' show Platform;
 import 'package:adex_client/adex_client.dart';
-import 'package:adex_flutter/screens/main_navigation_screen.dart';
+import 'package:adex_flutter/screens/web/main_navigation_screen.dart';
 import 'package:adex_flutter/screens/mobile/adex_service_screen.dart' as mobile;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';

@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:video_player/video_player.dart';
 
-import '../main.dart';
+import '../../main.dart';
 
 /// Responsive breakpoints
 class _Breakpoints {

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'package:adex_client/adex_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../main.dart';
+import '../../main.dart';
 
 /// Screen to display all AdexModel records in a read-only format
 class AdexModelsScreen extends StatefulWidget {

@@ -1,6 +1,6 @@
 
-import 'package:adex_flutter/screens/adex_models_screen.dart';
-import 'package:adex_flutter/screens/adex_service_screen.dart';
+import 'package:adex_flutter/screens/web/adex_models_screen.dart';
+import 'package:adex_flutter/screens/web/adex_service_screen.dart';
 import 'package:flutter/material.dart';
 
 class MainNavigationScreen extends StatefulWidget {
