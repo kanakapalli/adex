@@ -4,6 +4,7 @@ import 'package:adex_client/adex_client.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:serverpod_auth_idp_flutter/serverpod_auth_idp_flutter.dart';
 import 'package:video_player/video_player.dart';
 import '../../main.dart';
 import 'history_screen.dart';
@@ -515,12 +516,33 @@ Return the data in a structured JSON format.''',
                           ],
                         ),
                       )
-                    else
+                    else ...[
+                      PopupMenuButton<String>(
+                        onSelected: (value) async {
+                          if (value == 'logout') {
+                            await client.auth.signOutDevice();
+                          }
+                        },
+                        icon: const Icon(Icons.account_circle, color: Colors.white, size: 28),
+                        itemBuilder: (context) => const [
+                          PopupMenuItem<String>(
+                            value: 'logout',
+                            child: Row(
+                              children: [
+                                Icon(Icons.logout),
+                                SizedBox(width: 8),
+                                Text('Logout'),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
                       // History button
                       IconButton(
                         icon: const Icon(Icons.history, color: Colors.white),
                         onPressed: _loadHistory,
                       ),
+                    ],
                   ],
                 ),
               ),

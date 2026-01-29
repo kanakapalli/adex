@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 import 'package:adex_client/adex_client.dart';
+import 'package:adex_flutter/screens/sign.dart';
 import 'package:adex_flutter/screens/web/main_navigation_screen.dart';
 import 'package:adex_flutter/screens/mobile/adex_service_screen.dart' as mobile;
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -69,8 +70,8 @@ class MyApp extends StatelessWidget {
       ),
       themeMode: ThemeMode.system,
       home: _isMobile()
-          ? const mobile.MobileAdexServiceScreen()
-          : const MainNavigationScreen(),
+          ? SignInScreen(child: const mobile.MobileAdexServiceScreen())
+          : SignInScreen(child: const MainNavigationScreen()),
     );
   }
 

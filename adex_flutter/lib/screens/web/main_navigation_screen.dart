@@ -2,6 +2,8 @@
 import 'package:adex_flutter/screens/web/adex_models_screen.dart';
 import 'package:adex_flutter/screens/web/adex_service_screen.dart';
 import 'package:flutter/material.dart';
+import 'package:serverpod_auth_idp_flutter/serverpod_auth_idp_flutter.dart';
+import '../../main.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
@@ -24,6 +26,29 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
     });
   }
 
+  Widget _buildProfileMenu() {
+    return PopupMenuButton<String>(
+      onSelected: (value) async {
+        if (value == 'logout') {
+          await client.auth.signOutDevice();
+        }
+      },
+      icon: const Icon(Icons.account_circle),
+      itemBuilder: (context) => const [
+        PopupMenuItem<String>(
+          value: 'logout',
+          child: Row(
+            children: [
+              Icon(Icons.logout),
+              SizedBox(width: 8),
+              Text('Logout'),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isWide = MediaQuery.of(context).size.width >= 600;
@@ -43,6 +68,15 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
                   'assets/logo/adex_logo.png',
                   width: 40,
                   height: 40,
+                ),
+              ),
+              trailing: Expanded(
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: _buildProfileMenu(),
+                  ),
                 ),
               ),
               destinations: const [
@@ -67,6 +101,16 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
 
     // Use bottom navigation for narrow screens
     return Scaffold(
+      appBar: AppBar(
+        title: Image.asset(
+          'assets/logo/adex_logo.png',
+          width: 32,
+          height: 32,
+        ),
+        actions: [
+          _buildProfileMenu(),
+        ],
+      ),
       body: _screens[_selectedIndex],
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
