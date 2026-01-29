@@ -1,15 +1,13 @@
 
-<p align="center">
-   <img src="assets/logo/adex_logo_full.png" alt="ADEX Logo" width="500"/>
-</p>
 
 # ADEX — Adaptive Data Extraction System
 
 
 **Video-first data extraction that succeeds where single-image OCR fails.**
 
+
 <p align="center">
-   <img src="assets/logo/adex_arrow.png" alt="ADEX Arrow" width="200"/>
+  <img src="adex_flutter/assets/logo/banner_bg.png" alt="ADEX Arrow" width="500"/>
 </p>
 
 ADEX replaces the fragile "take one perfect photo" approach with temporal video analysis. Users record a short video sweep of a product, and ADEX extracts accurate text and structured data — even from blurry, glare-obscured, or folded surfaces.

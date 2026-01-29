@@ -1,13 +1,12 @@
-<p align="center">
-  <img src="assets/logo/adex_logo_full.png" alt="ADEX Logo" width="500"/>
-</p>
+
 
 # Project ADEX — Adaptive Data Extraction System
 
 *Solving the "Static Image Failure" with Temporal RAG*
 
+
 <p align="center">
-  <img src="assets/logo/adex_arrow.png" alt="ADEX Arrow" width="200"/>
+  <img src="adex_flutter/assets/logo/banner_bg.png" alt="ADEX Arrow" width="500"/>
 </p>
 
 ## Inspiration
@@ -190,3 +189,7 @@ We learned how to use software intelligence to overcome hardware constraints —
 
 - **Phase 4: Developer API**
   Package ADEX as a **plug-and-play API**, enabling third-party apps like Yuka, Truthin, or Open Food Facts to replace static OCR with temporal video extraction.
+
+<p align="center">
+  <img src="adex_flutter/assets/logo/adex_logo.png" alt="ADEX Logo" width="500"/>
+</p>
