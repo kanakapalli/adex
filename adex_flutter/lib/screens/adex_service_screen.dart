@@ -99,7 +99,7 @@ Return the data in a structured JSON format.''',
   // State
   bool _isProcessing = false;
   bool _extractToText = true;
-  bool _showAdvancedOptions = true; // Show advanced options by default to display pre-filled values
+  bool _showAdvancedOptions = false;
   String? _selectedFileName;
   Uint8List? _selectedFileBytes;
   String? _errorMessage;
