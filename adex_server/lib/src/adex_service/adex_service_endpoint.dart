@@ -1242,7 +1242,7 @@ Return ONLY valid JSON with no markdown formatting or explanation.
     try {
       // Delete database entries (no local files to clean — temp dir is cleaned in finally block)
       _debug('   💾 Deleting embedding database entries...', emoji: '🧹');
-      final deletedCount = await VideoFrameEmbedding.db.deleteWhere(
+      await VideoFrameEmbedding.db.deleteWhere(
         session,
         where: (t) => t.adexModelId.equals(adexModelId) & t.processingId.equals(processingId),
       );
@@ -1269,24 +1269,18 @@ Return ONLY valid JSON with no markdown formatting or explanation.
     }
 
     _debug('🔐 _getAccessToken: Fetching new token...', emoji: '🔐');
+    
 
-    final serviceAccountJson = {
-      "type": "service_account",
-      "project_id": "weedit-india",
-      "private_key_id": "ddab251d446cb7a52023fd94e039af5ae2e091a0",
-      "private_key":
-          "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDLigIUwTLYajK+\nOMVt1oHL6C3MGxUdhbwhWN4QWFiPrrzstj9NcDp74hifyeUwpDjODIFp5VitqQou\nHiUDrExBvhVuLEzXMjgmRslnBK4DgFreo3CQYvicCorh5r8RYYfHbIkiDDya3nSE\nZ6rB/4jPIK5neHDGLx8CwN76F6SOK9pTxYDOQfdCmsz1CxWWcCslj6Oj0EesT1Tu\nDBjeqfC3uctq54aUAW2joWQ7XDNSAlHVAXkLuARzxW3iP1FmAlYQmC8Q70NqwykJ\n4e8qLxWw+LH6jIQsjklrDq38hNHjdGCJsb/LUVdIasDFuHiJ70a4tA27AFOQRyiC\nbzi5lY/tAgMBAAECggEADBhe6EnU0ix5aHlqLg1FuE7LTeo8Fn2IgPjNdW4ykRNC\nsdRgraLiLtNwQCqYvou7vm7az+arnuJBMx1ieLXn8C4yCtKCHHWlBY1GUaNjDd02\nSS2wNjxTZr5vo135c7h2f6DRA19zyIY4qVeZu56KTDi2dHqhRP2u25SHi5gVFMem\nN5X/yofNdNCdhR6PDgAOwReJvKYTQmF1/mV0emhg0JxRtJ8QygVVxKz3snlVktnB\nApmE52Y4EHiaGYf2oaF21KAcEK3jwRg2Y02SWiP7ohrwTLTJPaAI4GDf8kd/LC0T\nWKjkkOOo+O2JXlg6Ci0l3pZooapAKdcpduyCQptXcQKBgQDm2Sn950Z9yh5UDk7+\n0hNu6mmXEy/VKdHigl9ZzxJfu9xn29P2C8oOdPom3Lb559DKbOHenyrM805jvd3d\nwjuKeNyQD6bA6pO83KomOdif/OfNbfeMx/G1Y2jrqUPsAJf3bitHcHDjm2dU/4Z9\ni1uJOMNxiSji74IbG4gLYI0jOQKBgQDhtyJOcd8ce4nC5u0/DtTH/NBX8wJ2W6jn\nu1jxr1We643Ujx/UbeomBqvyszW0MXoCb+DLXj8YO6F/uyMG4IqFHslppKJwGKgk\nye4Ff51//CNnL3bljVkzeQWLbWtVEDvavuQG+od1Hb8BbMIb913vJWgARPpSrih0\nXkLD1mnOVQKBgDvISYOjfTHeQfRqsDJ1nOrAcg/ZvC1r4xrRwHe1lICOWgnbeAzk\nCLOtv4qI5inZysxhXi0U8zSYXdietvJS9rBplFUKeJjFJvVl//peSKdGC5G7xLwE\nm6fp0qYU864OiUxej360s8d920i708x3ZoEm3hZs+tWqSPtUKesoWeShAoGAMSIm\nS6EqCg8yS8Ts+/8Efowf5iU18gG94MO9ds7N+owYEZ8eNKXAhIqLP4eXNyRWBNXJ\nvztCzMmePCnGVCbowFWVTnPSEEitwWRbdcLzy/pc0odYgFumgTfk5xboeFnSTamk\nBYjfl7Tj8TF1h5TvU7F21CgvvXO/xqUGL48q9QkCgYBmXzDotdb6bx5NDgWj7/0w\nmJqqunMYyPukOuUz/7QBIDUhQ3DwDklZ4kTVGqS7PHaZLzgHXYMxIDC63t2UOgzy\nBBvfg77dAigMZgCLVOFwUsu4EvoVC74LxZapTKLlCTcw3tvYupmifnypkUOpc2Z/\nS580xE8PTXaQAWtCcsMIFQ==\n-----END PRIVATE KEY-----\n",
-      "client_email": "vetex-ai-user-serverpod@weedit-india.iam.gserviceaccount.com",
-      "client_id": "104443392683761524427",
-      "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-      "token_uri": "https://oauth2.googleapis.com/token",
-      "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-      "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/vetex-ai-user-serverpod%40weedit-india.iam.gserviceaccount.com",
-      "universe_domain": "googleapis.com"
-    };
+    // Load service account JSON from passwords.yaml (shared.googleServiceAccountJson)
+    final jsonString = session.passwords.get('googleServiceAccountJson');
+    _debug('   📧  googleServiceAccountJson: [90m${jsonString}[0m', emoji: '🔐');
+    
 
-    _debug('   📧 Service account: ${serviceAccountJson['client_email']}', emoji: '🔐');
-    _debug('   🌐 Token URI: ${serviceAccountJson['token_uri']}', emoji: '🔐');
+
+    final serviceAccountJson = jsonDecode(jsonString);
+
+    _debug('   📧 Service account: [90m${serviceAccountJson['client_email']}[0m', emoji: '🔐');
+    _debug('   🌐 Token URI: [90m${serviceAccountJson['token_uri']}[0m', emoji: '🔐');
 
     final credentials = ServiceAccountCredentials.fromJson(serviceAccountJson);
     final scopes = ['https://www.googleapis.com/auth/cloud-platform'];
