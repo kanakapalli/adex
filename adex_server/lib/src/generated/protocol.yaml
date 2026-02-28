@@ -23,6 +23,3 @@ upload:
   - getPublicUrl:
   - listFiles:
   - deleteFile:
-videoExtraction:
-  - processVideoComplete:
-  - extractVideoFrames:

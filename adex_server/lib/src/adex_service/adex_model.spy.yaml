@@ -26,7 +26,7 @@ fields:
   ### Processing status: pending, processing, completed, failed
   status: String, default='pending'
 
-  ### Gemini-generated frame types JSON
+  ### Nova 2 Lite-generated frame types JSON
   frameTypesJson: String?
 
   ### Extracted frames data as JSON with frame type, description, count, and URLs

@@ -26,8 +26,8 @@ import 'protocol.dart' as _i8;
 /// This endpoint provides:
 /// 1. Video upload and AdexModel creation
 /// 2. Frame extraction at 2 FPS using FFmpeg
-/// 3. Embedding generation using Vertex AI multimodalembedding@001 (1408 dimensions)
-/// 4. RAG-based frame type detection and extraction using Gemini
+/// 3. Embedding generation using Amazon Nova 2 Multimodal Embeddings (1024 dimensions)
+/// 4. RAG-based frame type detection and extraction using Amazon Nova 2 Lite
 /// 5. Text extraction from frames when extractToText is true
 /// {@category Endpoint}
 class EndpointAdexService extends _i1.EndpointRef {
@@ -426,72 +426,6 @@ class EndpointUpload extends _i1.EndpointRef {
       );
 }
 
-/// {@category Endpoint}
-class EndpointVideoExtraction extends _i1.EndpointRef {
-  EndpointVideoExtraction(_i1.EndpointCaller caller) : super(caller);
-
-  @override
-  String get name => 'videoExtraction';
-
-  /// Complete workflow: Extract frames, generate embeddings, classify, and save product images
-  ///
-  /// This is the main entry point for video processing. It performs:
-  /// 1. Extract 2 frames per second from video
-  /// 2. Generate embeddings using Vertex AI multimodalembedding@002
-  /// 3. Save embeddings to database with vector indexing
-  /// 4. Use RAG to find product, nutrition facts, ingredients, and back images
-  /// 5. Save classified images to organized output directory
-  /// 6. Optionally extract text using Gemini 2.0 Flash (if textExtraction is true)
-  /// 7. Cleanup temporary frames and database entries
-  ///
-  /// Parameters:
-  /// - videoUrl: URL of the video to process
-  /// - outputDir: Directory to save classified images
-  /// - textExtraction: If true, extract text from images using Gemini 2.0 (default: false)
-  ///
-  /// Note: Vertex AI credentials are automatically loaded from config/passwords.yaml
-  ///
-  /// Returns: Map with paths to saved images and extracted text (if enabled):
-  ///   {
-  ///     'images': {
-  ///       'product': 'path',
-  ///       'nutrifact': ['path1', 'path2'],
-  ///       'ingredients': ['path1', 'path2'],
-  ///       'back': 'path'
-  ///     },
-  ///     'extractedText': {  // Only if textExtraction=true
-  ///       'nutritionFacts': { ... },
-  ///       'ingredients': { ... },
-  ///       'productInfo': { ... },
-  ///       'claimsAndAllergens': { ... }
-  ///     }
-  ///   }
-  _i2.Future<Map<String, dynamic>> processVideoComplete(
-    String videoUrl,
-    String outputDir, {
-    required bool textExtraction,
-  }) => caller.callServerEndpoint<Map<String, dynamic>>(
-    'videoExtraction',
-    'processVideoComplete',
-    {
-      'videoUrl': videoUrl,
-      'outputDir': outputDir,
-      'textExtraction': textExtraction,
-    },
-  );
-
-  /// Legacy method: Extract 1 frame per second (deprecated)
-  ///
-  /// Use processVideoComplete() instead for the full workflow.
-  @Deprecated('Use processVideoComplete() for the complete workflow')
-  _i2.Future<int> extractVideoFrames(String videoUrl) =>
-      caller.callServerEndpoint<int>(
-        'videoExtraction',
-        'extractVideoFrames',
-        {'videoUrl': videoUrl},
-      );
-}
-
 class Modules {
   Modules(Client client) {
     serverpod_auth_idp = _i5.Caller(client);
@@ -537,7 +471,6 @@ class Client extends _i1.ServerpodClientShared {
     jwtRefresh = EndpointJwtRefresh(this);
     greeting = EndpointGreeting(this);
     upload = EndpointUpload(this);
-    videoExtraction = EndpointVideoExtraction(this);
     modules = Modules(this);
   }
 
@@ -551,8 +484,6 @@ class Client extends _i1.ServerpodClientShared {
 
   late final EndpointUpload upload;
 
-  late final EndpointVideoExtraction videoExtraction;
-
   late final Modules modules;
 
   @override
@@ -562,7 +493,6 @@ class Client extends _i1.ServerpodClientShared {
     'jwtRefresh': jwtRefresh,
     'greeting': greeting,
     'upload': upload,
-    'videoExtraction': videoExtraction,
   };
 
   @override

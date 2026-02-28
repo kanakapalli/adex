@@ -2,7 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:googleapis_auth/auth_io.dart';
+import 'package:amazon_cognito_identity_dart_2/sig_v4.dart';
+import 'package:crypto/crypto.dart';
 import 'package:serverpod/serverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
@@ -14,17 +15,20 @@ import '../upload/s3_upload_helper.dart';
 /// This endpoint provides:
 /// 1. Video upload and AdexModel creation
 /// 2. Frame extraction at 2 FPS using FFmpeg
-/// 3. Embedding generation using Vertex AI multimodalembedding@001 (1408 dimensions)
-/// 4. RAG-based frame type detection and extraction using Gemini
+/// 3. Embedding generation using Amazon Nova 2 Multimodal Embeddings (1024 dimensions)
+/// 4. RAG-based frame type detection and extraction using Amazon Nova 2 Lite
 /// 5. Text extraction from frames when extractToText is true
 class AdexServiceEndpoint extends Endpoint {
   // ============================================================================
   // CONFIGURATION
   // ============================================================================
 
-  // Concurrency moved to rate limiting section below
-  static const String _projectId = 'weedit-india';
-  static const String _location = 'us-central1';
+  // AWS Bedrock configuration
+  static const String _bedrockRegion = 'us-east-1';
+  static const String _novaEmbeddingModelId = 'amazon.nova-2-multimodal-embeddings-v1:0';
+  static const String _novaLiteModelId = 'us.amazon.nova-2-lite-v1:0'; // Nova 2 Lite via US cross-region inference
+  static const int _embeddingDimension = 1024;
+
   static const String _storageId = 'public';
 
   // Frame extraction configuration
@@ -38,10 +42,6 @@ class AdexServiceEndpoint extends Endpoint {
 
   // Runtime overrides (set per-request from UI parameters)
   int _activeMaxRetries = _maxRetries;
-
-  // Token caching
-  static String? _cachedAccessToken;
-  static DateTime? _tokenExpiresAt;
 
   // ============================================================================
   // DEBUG HELPER
@@ -59,8 +59,8 @@ class AdexServiceEndpoint extends Endpoint {
   // RETRY HELPER WITH EXPONENTIAL BACKOFF
   // ============================================================================
 
-  /// Execute an async operation with retry logic and exponential backoff
-  /// Handles 429 (rate limit) and 503 (service unavailable) errors
+  /// Execute an async operation with retry logic and exponential backoff.
+  /// Handles 429 (rate limit), 503 (service unavailable), and AWS throttling errors.
   Future<T> _withRetry<T>(
     Future<T> Function() operation, {
     String operationName = 'API call',
@@ -75,8 +75,11 @@ class AdexServiceEndpoint extends Endpoint {
         return await operation();
       } catch (e) {
         final isRetryable = e.toString().contains('429') ||
-            e.toString().contains('RESOURCE_EXHAUSTED') ||
             e.toString().contains('503') ||
+            e.toString().contains('ThrottlingException') ||
+            e.toString().contains('ServiceUnavailableException') ||
+            e.toString().contains('TooManyRequestsException') ||
+            e.toString().contains('RESOURCE_EXHAUSTED') ||
             e.toString().contains('overloaded');
 
         final effectiveRetries = maxRetries ?? _activeMaxRetries;
@@ -270,20 +273,21 @@ class AdexServiceEndpoint extends Endpoint {
       _debug('   ⏱️  Time: ${createTimer.elapsedMilliseconds}ms', emoji: '✓');
 
       // ═══════════════════════════════════════════════════════════════════════
-      // STEP 2: Get Access Token
+      // STEP 2: Load AWS Credentials
       // ═══════════════════════════════════════════════════════════════════════
       _debug('', emoji: '');
       _debug('┌─────────────────────────────────────────────────────────────┐', emoji: '🔐');
-      _debug('│  STEP 2: Fetching Vertex AI Access Token                    │', emoji: '🔐');
+      _debug('│  STEP 2: Loading AWS Credentials                            │', emoji: '🔐');
       _debug('└─────────────────────────────────────────────────────────────┘', emoji: '🔐');
 
-      final tokenTimer = Stopwatch()..start();
-      _debug('🔑 Authenticating with Google Cloud...', emoji: '🔐');
-      final accessToken = await _getAccessToken(session);
-      tokenTimer.stop();
-      _debug('✅ Access token obtained!', emoji: '✓');
-      _debug('   🔑 Token: ${accessToken.substring(0, 20)}...', emoji: '✓');
-      _debug('   ⏱️  Time: ${tokenTimer.elapsedMilliseconds}ms', emoji: '✓');
+      final credTimer = Stopwatch()..start();
+      final awsAccessKey = session.passwords.get('AWSAccessKeyId');
+      final awsSecretKey = session.passwords.get('AWSSecretKey');
+      credTimer.stop();
+      _debug('✅ AWS credentials loaded!', emoji: '✓');
+      _debug('   🔑 Access Key: ${awsAccessKey.substring(0, 8)}...', emoji: '✓');
+      _debug('   🌍 Bedrock Region: $_bedrockRegion', emoji: '✓');
+      _debug('   ⏱️  Time: ${credTimer.elapsedMilliseconds}ms', emoji: '✓');
 
       // ═══════════════════════════════════════════════════════════════════════
       // STEP 3: Extract Frames & Generate Embeddings
@@ -304,7 +308,8 @@ class AdexServiceEndpoint extends Endpoint {
         videoStoragePathResolved,
         processingId,
         adexModel.id!,
-        accessToken,
+        awsAccessKey,
+        awsSecretKey,
         tempDir,
         effectiveConcurrency,
         effectiveDelay,
@@ -322,18 +327,19 @@ class AdexServiceEndpoint extends Endpoint {
       // ═══════════════════════════════════════════════════════════════════════
       _debug('', emoji: '');
       _debug('┌─────────────────────────────────────────────────────────────┐', emoji: '🤖');
-      _debug('│  STEP 4: RAG - Generating Frame Types with Gemini           │', emoji: '🤖');
+      _debug('│  STEP 4: RAG - Generating Frame Types with Nova 2 Lite      │', emoji: '🤖');
       _debug('└─────────────────────────────────────────────────────────────┘', emoji: '🤖');
 
       final ragTimer = Stopwatch()..start();
 
-      _debug('🧠 Calling Gemini to analyze frame requirements...', emoji: '🤖');
+      _debug('🧠 Calling Nova Lite to analyze frame requirements...', emoji: '🤖');
       final frameTypesJson = await _generateFrameTypes(
         session,
         userPrompt,
         whatDoesThisVideoContain,
         suggestFramesToExtract,
-        accessToken,
+        awsAccessKey,
+        awsSecretKey,
       );
 
       _debug('✅ Frame types generated!', emoji: '✓');
@@ -371,7 +377,8 @@ class AdexServiceEndpoint extends Endpoint {
         adexModel.id!,
         processingId,
         frameTypesJson,
-        accessToken,
+        awsAccessKey,
+        awsSecretKey,
         tempDir,
       );
 
@@ -411,7 +418,7 @@ class AdexServiceEndpoint extends Endpoint {
       if (extractToText && extractedDataInformationPrompt != null) {
         _debug('', emoji: '');
         _debug('┌─────────────────────────────────────────────────────────────┐', emoji: '📝');
-        _debug('│  STEP 6: Extracting Text from Frames with Gemini            │', emoji: '📝');
+        _debug('│  STEP 6: Extracting Text from Frames with Nova 2 Lite       │', emoji: '📝');
         _debug('└─────────────────────────────────────────────────────────────┘', emoji: '📝');
 
         final textTimer = Stopwatch()..start();
@@ -421,7 +428,8 @@ class AdexServiceEndpoint extends Endpoint {
           session,
           extractedFramesData,
           extractedDataInformationPrompt,
-          accessToken,
+          awsAccessKey,
+          awsSecretKey,
         );
 
         textTimer.stop();
@@ -551,6 +559,126 @@ class AdexServiceEndpoint extends Endpoint {
   }
 
   // ============================================================================
+  // PRIVATE METHODS - AWS Bedrock Signing
+  // ============================================================================
+
+  /// SigV4 URI encoding: encodes every byte except unreserved chars (A-Z a-z 0-9 - . _ ~).
+  /// '/' path separators are preserved; all other chars (including ':') are percent-encoded.
+  /// Per AWS SigV4 spec: https://docs.aws.amazon.com/general/latest/gr/sigv4-create-canonical-request.html
+  String _sigV4EncodePath(String path) {
+    return path.split('/').map((segment) {
+      final out = StringBuffer();
+      for (final r in segment.runes) {
+        if ((r >= 0x41 && r <= 0x5A) || // A-Z
+            (r >= 0x61 && r <= 0x7A) || // a-z
+            (r >= 0x30 && r <= 0x39) || // 0-9
+            r == 0x2D || // -
+            r == 0x2E || // .
+            r == 0x5F || // _
+            r == 0x7E) { // ~
+          out.writeCharCode(r);
+        } else {
+          // Percent-encode every other byte
+          final bytes = utf8.encode(String.fromCharCode(r));
+          for (final b in bytes) {
+            out.write('%${b.toRadixString(16).toUpperCase().padLeft(2, '0')}');
+          }
+        }
+      }
+      return out.toString();
+    }).join('/');
+  }
+
+  /// Sign an AWS Bedrock Runtime POST request with SigV4.
+  /// Returns HTTP headers including Authorization, X-Amz-Date, and X-Amz-Content-Sha256.
+  Map<String, String> _signedBedrockHeaders({
+    required Uri uri,
+    required String body,
+    required String accessKey,
+    required String secretKey,
+  }) {
+    const service = 'bedrock';
+    final datetime = SigV4.generateDatetime();
+    final payloadHash = sha256.convert(utf8.encode(body)).toString();
+
+    // Canonical headers — must be sorted alphabetically by header name
+    final canonicalHeaders =
+        'content-type:application/json\n'
+        'host:${uri.host}\n'
+        'x-amz-content-sha256:$payloadHash\n'
+        'x-amz-date:$datetime\n';
+    const signedHeadersStr = 'content-type;host;x-amz-content-sha256;x-amz-date';
+
+    // SigV4 canonical URI: apply SigV4 URI encoding to the path
+    // uri.path has the decoded path (literal ':'), we must encode it per SigV4 rules
+    final canonicalUri = _sigV4EncodePath(uri.path);
+
+    final canonicalRequest = [
+      'POST',
+      canonicalUri,
+      uri.query,
+      canonicalHeaders,
+      signedHeadersStr,
+      payloadHash,
+    ].join('\n');
+
+    final credentialScope = SigV4.buildCredentialScope(datetime, _bedrockRegion, service);
+    final hashedCanonical = sha256.convert(utf8.encode(canonicalRequest)).toString();
+    final stringToSign = [
+      'AWS4-HMAC-SHA256',
+      datetime,
+      credentialScope,
+      hashedCanonical,
+    ].join('\n');
+
+    final signingKey = SigV4.calculateSigningKey(secretKey, datetime, _bedrockRegion, service);
+    final signature = SigV4.calculateSignature(signingKey, stringToSign);
+
+    return {
+      'Authorization': 'AWS4-HMAC-SHA256 Credential=$accessKey/$credentialScope, SignedHeaders=$signedHeadersStr, Signature=$signature',
+      'Content-Type': 'application/json',
+      'X-Amz-Date': datetime,
+      'X-Amz-Content-Sha256': payloadHash,
+    };
+  }
+
+  /// Invoke a Bedrock model synchronously and return the parsed JSON response.
+  Future<Map<String, dynamic>> _invokeBedrockModel({
+    required String modelId,
+    required Map<String, dynamic> requestBody,
+    required String awsAccessKey,
+    required String awsSecretKey,
+  }) async {
+    // Use a literal colon in the path — ':' is valid in URI path segments (RFC 3986).
+    // Do NOT Uri.encodeComponent here: that would produce '%3A', which http.post sends
+    // as-is, and AWS would then see '%3A' and double-encode it to '%253A' in its own
+    // canonical string computation, causing a signature mismatch.
+    // Instead we send ':' literally; _sigV4EncodePath encodes it to '%3A' only in the
+    // canonical request string (matching exactly what AWS computes on its side).
+    final uri = Uri.parse(
+      'https://bedrock-runtime.$_bedrockRegion.amazonaws.com/model/$modelId/invoke',
+    );
+    final body = jsonEncode(requestBody);
+
+    final headers = _signedBedrockHeaders(
+      uri: uri,
+      body: body,
+      accessKey: awsAccessKey,
+      secretKey: awsSecretKey,
+    );
+
+    final response = await http.post(uri, headers: headers, body: body);
+
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Bedrock API error (${response.statusCode} $modelId): ${response.body}',
+      );
+    }
+
+    return jsonDecode(response.body) as Map<String, dynamic>;
+  }
+
+  // ============================================================================
   // PRIVATE METHODS - Frame Extraction & Embedding
   // ============================================================================
 
@@ -563,7 +691,8 @@ class AdexServiceEndpoint extends Endpoint {
     String videoStoragePath,
     String processingId,
     int adexModelId,
-    String accessToken,
+    String awsAccessKey,
+    String awsSecretKey,
     Directory tempDir,
     int concurrency,
     Duration delayBetweenBatches, {
@@ -657,7 +786,7 @@ class AdexServiceEndpoint extends Endpoint {
     final allFrameObjects = <VideoFrameEmbedding>[];
     int batchNumber = 0;
 
-    // Process frames in parallel batches (API only supports 1 image per request)
+    // Process frames in parallel batches
     for (int i = 0; i < frameFiles.length; i += concurrency) {
       batchNumber++;
       final batchEnd = (i + concurrency < frameFiles.length)
@@ -669,7 +798,7 @@ class AdexServiceEndpoint extends Endpoint {
 
       // Generate embeddings in parallel (concurrent API calls)
       final embeddingFutures = batchFiles.map((file) =>
-          _generateImageEmbedding(session, file.path, accessToken));
+          _generateImageEmbedding(session, file.path, awsAccessKey, awsSecretKey));
       final embeddings = await Future.wait(embeddingFutures);
 
       // Create frame objects
@@ -713,41 +842,39 @@ class AdexServiceEndpoint extends Endpoint {
     };
   }
 
-  /// Generate embedding for a single image using Vertex AI multimodalembedding@001
+  /// Generate embedding for a single image using Amazon Nova 2 Multimodal Embeddings.
+  /// Returns a 1024-dimensional vector.
   Future<List<double>> _generateImageEmbedding(
     Session session,
     String imagePath,
-    String accessToken,
+    String awsAccessKey,
+    String awsSecretKey,
   ) async {
     return _withRetry(
-      operationName: 'Image embedding',
+      operationName: 'Image embedding (Nova 2)',
       () async {
         final imageBytes = await File(imagePath).readAsBytes();
         final base64Image = base64Encode(imageBytes);
 
-        final url = 'https://$_location-aiplatform.googleapis.com/v1/projects/$_projectId/locations/$_location/publishers/google/models/multimodalembedding@001:predict';
-
-        final response = await http.post(
-          Uri.parse(url),
-          headers: {
-            'Authorization': 'Bearer $accessToken',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({
-            'instances': [
-              {
-                'image': {'bytesBase64Encoded': base64Image},
+        final result = await _invokeBedrockModel(
+          modelId: _novaEmbeddingModelId,
+          requestBody: {
+            'schemaVersion': 'nova-multimodal-embed-v1',
+            'taskType': 'SINGLE_EMBEDDING',
+            'singleEmbeddingParams': {
+              'embeddingPurpose': 'GENERIC_INDEX',
+              'embeddingDimension': _embeddingDimension,
+              'image': {
+                'format': 'png',
+                'source': {'bytes': base64Image},
               },
-            ],
-          }),
+            },
+          },
+          awsAccessKey: awsAccessKey,
+          awsSecretKey: awsSecretKey,
         );
 
-        if (response.statusCode != 200) {
-          throw Exception('Failed to generate embedding: ${response.statusCode} - ${response.body}');
-        }
-
-        final result = jsonDecode(response.body);
-        final embedding = (result['predictions'][0]['imageEmbedding'] as List)
+        final embedding = (result['embeddings'][0]['embedding'] as List)
             .map((e) => (e as num).toDouble())
             .toList();
 
@@ -756,42 +883,38 @@ class AdexServiceEndpoint extends Endpoint {
     );
   }
 
-
-  /// Generate text embedding using Vertex AI
+  /// Generate text embedding using Amazon Nova 2 Multimodal Embeddings.
+  /// Returns a 1024-dimensional vector in the same space as image embeddings.
   Future<List<double>> _generateTextEmbedding(
     Session session,
     String text,
-    String accessToken,
+    String awsAccessKey,
+    String awsSecretKey,
   ) async {
     _debug('   📝 Generating text embedding for: "${text.substring(0, text.length > 50 ? 50 : text.length)}..."', emoji: '🧠');
 
     return _withRetry(
-      operationName: 'Text embedding',
+      operationName: 'Text embedding (Nova 2)',
       () async {
-        final url = 'https://$_location-aiplatform.googleapis.com/v1/projects/$_projectId/locations/$_location/publishers/google/models/multimodalembedding@001:predict';
-
-        final response = await http.post(
-          Uri.parse(url),
-          headers: {
-            'Authorization': 'Bearer $accessToken',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({
-            'instances': [
-              {
-                'text': text,
+        final result = await _invokeBedrockModel(
+          modelId: _novaEmbeddingModelId,
+          requestBody: {
+            'schemaVersion': 'nova-multimodal-embed-v1',
+            'taskType': 'SINGLE_EMBEDDING',
+            'singleEmbeddingParams': {
+              'embeddingPurpose': 'GENERIC_RETRIEVAL',
+              'embeddingDimension': _embeddingDimension,
+              'text': {
+                'truncationMode': 'END',
+                'value': text,
               },
-            ],
-          }),
+            },
+          },
+          awsAccessKey: awsAccessKey,
+          awsSecretKey: awsSecretKey,
         );
 
-        if (response.statusCode != 200) {
-          _debug('   ❌ Text embedding API error: ${response.statusCode}', emoji: '❌');
-          throw Exception('Failed to generate text embedding: ${response.statusCode} - ${response.body}');
-        }
-
-        final result = jsonDecode(response.body);
-        final embedding = (result['predictions'][0]['textEmbedding'] as List)
+        final embedding = (result['embeddings'][0]['embedding'] as List)
             .map((e) => (e as num).toDouble())
             .toList();
 
@@ -805,15 +928,16 @@ class AdexServiceEndpoint extends Endpoint {
   // PRIVATE METHODS - RAG Frame Type Detection
   // ============================================================================
 
-  /// Generate frame types JSON using Gemini based on user prompts
+  /// Generate frame types JSON using Amazon Nova Lite based on user prompts.
   Future<String> _generateFrameTypes(
     Session session,
     String userPrompt,
     String? whatDoesThisVideoContain,
     List<String>? suggestFramesToExtract,
-    String accessToken,
+    String awsAccessKey,
+    String awsSecretKey,
   ) async {
-    _debug('🤖 _generateFrameTypes: Calling Gemini API...', emoji: '🤖');
+    _debug('🤖 _generateFrameTypes: Calling Nova Lite API...', emoji: '🤖');
 
     final prompt = '''
 You are an expert at analyzing video content and determining what types of frames need to be extracted.
@@ -856,45 +980,36 @@ Example output:
 ''';
 
     return _withRetry(
-      operationName: 'Generate frame types',
+      operationName: 'Generate frame types (Nova Lite)',
       () async {
-        final url = 'https://$_location-aiplatform.googleapis.com/v1/projects/$_projectId/locations/$_location/publishers/google/models/gemini-2.0-flash-exp:generateContent';
+        _debug('   🌐 Sending request to Nova Lite...', emoji: '🤖');
 
-        _debug('   🌐 Sending request to Gemini...', emoji: '🤖');
-        final response = await http.post(
-          Uri.parse(url),
-          headers: {
-            'Authorization': 'Bearer $accessToken',
-            'Content-Type': 'application/json',
-          },
-          body: jsonEncode({
-            'contents': [
+        final result = await _invokeBedrockModel(
+          modelId: _novaLiteModelId,
+          requestBody: {
+            'schemaVersion': 'messages-v1',
+            'messages': [
               {
                 'role': 'user',
-                'parts': [{'text': prompt}],
+                'content': [{'text': prompt}],
               },
             ],
-            'generationConfig': {
+            'inferenceConfig': {
+              'maxTokens': 2048,
               'temperature': 0.2,
-              'topK': 32,
-              'topP': 1,
-              'maxOutputTokens': 2048,
+              'topP': 0.9,
             },
-          }),
+          },
+          awsAccessKey: awsAccessKey,
+          awsSecretKey: awsSecretKey,
         );
 
-        if (response.statusCode != 200) {
-          _debug('   ❌ Gemini API error: ${response.statusCode}', emoji: '❌');
-          _debug('   📄 Response: ${response.body}', emoji: '❌');
-          throw Exception('Gemini API error: ${response.statusCode} - ${response.body}');
-        }
+        _debug('   ✅ Nova Lite response received', emoji: '🤖');
 
-        _debug('   ✅ Gemini response received', emoji: '🤖');
+        final textResponse =
+            result['output']['message']['content'][0]['text'] as String;
 
-        final result = jsonDecode(response.body);
-        final textResponse = result['candidates'][0]['content']['parts'][0]['text'] as String;
-
-        // Clean up the response
+        // Clean up the response (strip markdown fences if present)
         String jsonString = textResponse.trim();
         if (jsonString.startsWith('```json')) {
           jsonString = jsonString.substring(7);
@@ -920,13 +1035,14 @@ Example output:
   // PRIVATE METHODS - RAG Frame Extraction
   // ============================================================================
 
-  /// Extract frames using RAG based on frame types (PARALLEL processing)
+  /// Extract frames using RAG based on frame types (PARALLEL processing).
   Future<List<Map<String, dynamic>>> _extractFramesUsingRag(
     Session session,
     int adexModelId,
     String processingId,
     String frameTypesJson,
-    String accessToken,
+    String awsAccessKey,
+    String awsSecretKey,
     Directory tempDir,
   ) async {
     _debug('🔍 _extractFramesUsingRag: Starting RAG extraction...', emoji: '🔍');
@@ -948,7 +1064,8 @@ Example output:
 
     // Generate all embeddings in parallel
     final embeddingFutures = descriptions.entries.map((entry) async {
-      final embedding = await _generateTextEmbedding(session, entry.value, accessToken);
+      final embedding = await _generateTextEmbedding(
+          session, entry.value, awsAccessKey, awsSecretKey);
       return MapEntry(entry.key, embedding);
     });
 
@@ -991,7 +1108,7 @@ Example output:
           final outputFileName = '${frameType}_${i + 1}_${DateTime.now().millisecondsSinceEpoch}_$i.png';
           final s3Path = 'extracted_frames/$adexModelId/$outputFileName';
 
-          // Upload frame to S3 (using patched uploader)
+          // Upload frame to S3
           final frameBytes = await sourceFile.readAsBytes();
           _debug('      Uploading frame $i: $s3Path (${frameBytes.length} bytes)', emoji: '📤');
           try {
@@ -1040,13 +1157,14 @@ Example output:
   // PRIVATE METHODS - Text Extraction
   // ============================================================================
 
-  /// Extract text from ALL frames using a single Gemini API call
-  /// This is more efficient and avoids rate limiting issues
+  /// Extract text from ALL frames using a single Amazon Nova Lite API call.
+  /// This is more efficient and avoids rate limiting issues.
   Future<String> _extractTextFromFrames(
     Session session,
     List<Map<String, dynamic>> extractedFramesData,
     String extractedDataInformationPrompt,
-    String accessToken,
+    String awsAccessKey,
+    String awsSecretKey,
   ) async {
     _debug('📝 _extractTextFromFrames: Starting text extraction...', emoji: '📝');
     _debug('   📋 Processing ${extractedFramesData.length} frame types in a SINGLE API call', emoji: '📝');
@@ -1096,14 +1214,14 @@ Description: $description
 
     final base64Images = await Future.wait(imageReadFutures);
 
-    // Build image parts from parallel results
+    // Build image content blocks for Nova Lite messages-v1 format
     final allImageParts = <Map<String, dynamic>>[];
     for (final base64Image in base64Images) {
       if (base64Image != null) {
         allImageParts.add({
-          'inlineData': {
-            'mimeType': 'image/png',
-            'data': base64Image,
+          'image': {
+            'format': 'png',
+            'source': {'bytes': base64Image},
           },
         });
       }
@@ -1150,48 +1268,38 @@ Return ONLY valid JSON with no markdown formatting or explanation.
 
     try {
       final textResponse = await _withRetry(
-        operationName: 'Text extraction (all frames)',
+        operationName: 'Text extraction (Nova Lite, all frames)',
         () async {
-          final url = 'https://$_location-aiplatform.googleapis.com/v1/projects/$_projectId/locations/$_location/publishers/google/models/gemini-2.0-flash-exp:generateContent';
+          _debug('   🤖 Calling Nova Lite with ${allImageParts.length} images...', emoji: '📝');
 
-          _debug('   🤖 Calling Gemini with ${allImageParts.length} images...', emoji: '📝');
-          final response = await http.post(
-            Uri.parse(url),
-            headers: {
-              'Authorization': 'Bearer $accessToken',
-              'Content-Type': 'application/json',
-            },
-            body: jsonEncode({
-              'contents': [
+          final result = await _invokeBedrockModel(
+            modelId: _novaLiteModelId,
+            requestBody: {
+              'schemaVersion': 'messages-v1',
+              'messages': [
                 {
                   'role': 'user',
-                  'parts': [
+                  'content': [
                     {'text': prompt},
                     ...allImageParts,
                   ],
                 },
               ],
-              'generationConfig': {
+              'inferenceConfig': {
+                'maxTokens': 8192,
                 'temperature': 0.1,
-                'topK': 32,
-                'topP': 1,
-                'maxOutputTokens': 8192, // Increased for comprehensive response
+                'topP': 0.9,
               },
-            }),
+            },
+            awsAccessKey: awsAccessKey,
+            awsSecretKey: awsSecretKey,
           );
 
-          if (response.statusCode != 200) {
-            _debug('   ❌ Gemini API error: ${response.statusCode}', emoji: '❌');
-            _debug('   📄 Response: ${response.body}', emoji: '❌');
-            throw Exception('Gemini API error: ${response.statusCode} - ${response.body}');
-          }
-
-          final result = jsonDecode(response.body);
-          return result['candidates'][0]['content']['parts'][0]['text'] as String;
+          return result['output']['message']['content'][0]['text'] as String;
         },
       );
 
-      _debug('   ✅ Gemini response received', emoji: '✓');
+      _debug('   ✅ Nova Lite response received', emoji: '✓');
 
       // Parse the response as JSON
       String jsonString = textResponse.trim();
@@ -1251,54 +1359,6 @@ Return ONLY valid JSON with no markdown formatting or explanation.
     } catch (e) {
       _debug('   ⚠️  Cleanup error: $e', emoji: '⚠️');
     }
-  }
-
-  // ============================================================================
-  // PRIVATE METHODS - Authentication
-  // ============================================================================
-
-  /// Get access token for Vertex AI using service account (with caching)
-  Future<String> _getAccessToken(Session session) async {
-    // Check if we have a valid cached token (with 5-minute buffer)
-    if (_cachedAccessToken != null && _tokenExpiresAt != null) {
-      final now = DateTime.now();
-      if (_tokenExpiresAt!.isAfter(now.add(const Duration(minutes: 5)))) {
-        _debug('🔐 _getAccessToken: Using cached token (expires: $_tokenExpiresAt)', emoji: '🔐');
-        return _cachedAccessToken!;
-      }
-    }
-
-    _debug('🔐 _getAccessToken: Fetching new token...', emoji: '🔐');
-    
-
-    // Load service account JSON from passwords.yaml (shared.googleServiceAccountJson)
-    final jsonString = session.passwords.get('googleServiceAccountJson');
-    _debug('   📧  googleServiceAccountJson: [90m${jsonString}[0m', emoji: '🔐');
-    
-
-
-    final serviceAccountJson = jsonDecode(jsonString);
-
-    _debug('   📧 Service account: [90m${serviceAccountJson['client_email']}[0m', emoji: '🔐');
-    _debug('   🌐 Token URI: [90m${serviceAccountJson['token_uri']}[0m', emoji: '🔐');
-
-    final credentials = ServiceAccountCredentials.fromJson(serviceAccountJson);
-    final scopes = ['https://www.googleapis.com/auth/cloud-platform'];
-
-    _debug('   🔄 Requesting token from Google...', emoji: '🔐');
-    final client = await clientViaServiceAccount(credentials, scopes);
-
-    final token = client.credentials.accessToken.data;
-    final expiry = client.credentials.accessToken.expiry;
-
-    // Cache the token
-    _cachedAccessToken = token;
-    _tokenExpiresAt = expiry;
-
-    _debug('   ✅ Token obtained: ${token.substring(0, 20)}...', emoji: '✓');
-    _debug('   📅 Token expires: $expiry', emoji: '✓');
-
-    return token;
   }
 
   // ============================================================================

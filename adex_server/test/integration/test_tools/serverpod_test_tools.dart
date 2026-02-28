@@ -135,8 +135,6 @@ class TestEndpoints {
   late final _GreetingEndpoint greeting;
 
   late final _UploadEndpoint upload;
-
-  late final _VideoExtractionEndpoint videoExtraction;
 }
 
 class _InternalTestEndpoints extends TestEndpoints
@@ -163,10 +161,6 @@ class _InternalTestEndpoints extends TestEndpoints
       serializationManager,
     );
     upload = _UploadEndpoint(
-      endpoints,
-      serializationManager,
-    );
-    videoExtraction = _VideoExtractionEndpoint(
       endpoints,
       serializationManager,
     );
@@ -898,86 +892,6 @@ class _UploadEndpoint {
                   _localCallContext.arguments,
                 )
                 as _i3.Future<bool>);
-        return _localReturnValue;
-      } finally {
-        await _localUniqueSession.close();
-      }
-    });
-  }
-}
-
-class _VideoExtractionEndpoint {
-  _VideoExtractionEndpoint(
-    this._endpointDispatch,
-    this._serializationManager,
-  );
-
-  final _i2.EndpointDispatch _endpointDispatch;
-
-  final _i2.SerializationManager _serializationManager;
-
-  _i3.Future<Map<String, dynamic>> processVideoComplete(
-    _i1.TestSessionBuilder sessionBuilder,
-    String videoUrl,
-    String outputDir, {
-    required bool textExtraction,
-  }) async {
-    return _i1.callAwaitableFunctionAndHandleExceptions(() async {
-      var _localUniqueSession =
-          (sessionBuilder as _i1.InternalTestSessionBuilder).internalBuild(
-            endpoint: 'videoExtraction',
-            method: 'processVideoComplete',
-          );
-      try {
-        var _localCallContext = await _endpointDispatch.getMethodCallContext(
-          createSessionCallback: (_) => _localUniqueSession,
-          endpointPath: 'videoExtraction',
-          methodName: 'processVideoComplete',
-          parameters: _i1.testObjectToJson({
-            'videoUrl': videoUrl,
-            'outputDir': outputDir,
-            'textExtraction': textExtraction,
-          }),
-          serializationManager: _serializationManager,
-        );
-        var _localReturnValue =
-            await (_localCallContext.method.call(
-                  _localUniqueSession,
-                  _localCallContext.arguments,
-                )
-                as _i3.Future<Map<String, dynamic>>);
-        return _localReturnValue;
-      } finally {
-        await _localUniqueSession.close();
-      }
-    });
-  }
-
-  @Deprecated('Use processVideoComplete() for the complete workflow')
-  _i3.Future<int> extractVideoFrames(
-    _i1.TestSessionBuilder sessionBuilder,
-    String videoUrl,
-  ) async {
-    return _i1.callAwaitableFunctionAndHandleExceptions(() async {
-      var _localUniqueSession =
-          (sessionBuilder as _i1.InternalTestSessionBuilder).internalBuild(
-            endpoint: 'videoExtraction',
-            method: 'extractVideoFrames',
-          );
-      try {
-        var _localCallContext = await _endpointDispatch.getMethodCallContext(
-          createSessionCallback: (_) => _localUniqueSession,
-          endpointPath: 'videoExtraction',
-          methodName: 'extractVideoFrames',
-          parameters: _i1.testObjectToJson({'videoUrl': videoUrl}),
-          serializationManager: _serializationManager,
-        );
-        var _localReturnValue =
-            await (_localCallContext.method.call(
-                  _localUniqueSession,
-                  _localCallContext.arguments,
-                )
-                as _i3.Future<int>);
         return _localReturnValue;
       } finally {
         await _localUniqueSession.close();

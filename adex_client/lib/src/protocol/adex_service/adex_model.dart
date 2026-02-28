@@ -110,7 +110,7 @@ abstract class AdexModel implements _i1.SerializableModel {
   /// Processing status: pending, processing, completed, failed
   String status;
 
-  /// Gemini-generated frame types JSON
+  /// Nova 2 Lite-generated frame types JSON
   String? frameTypesJson;
 
   /// Extracted frames data as JSON with frame type, description, count, and URLs

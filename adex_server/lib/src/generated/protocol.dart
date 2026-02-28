@@ -243,8 +243,8 @@ class Protocol extends _i1.SerializationManagerServer {
           name: 'embedding',
           columnType: _i2.ColumnType.vector,
           isNullable: false,
-          dartType: 'Vector(1408)',
-          vectorDimension: 1408,
+          dartType: 'Vector(1024)',
+          vectorDimension: 1024,
         ),
         _i2.ColumnDefinition(
           name: 'metadata',
@@ -398,12 +398,6 @@ class Protocol extends _i1.SerializationManagerServer {
     }
     if (t == List<_i8.AdexModel>) {
       return (data as List).map((e) => deserialize<_i8.AdexModel>(e)).toList()
-          as T;
-    }
-    if (t == Map<String, dynamic>) {
-      return (data as Map).map(
-            (k, v) => MapEntry(deserialize<String>(k), deserialize<dynamic>(v)),
-          )
           as T;
     }
     try {

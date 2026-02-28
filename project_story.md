@@ -58,14 +58,14 @@ The key insight: **a single image is a gamble; a video is a guarantee.** Text hi
                   ▼
   ┌───────────────────────────────────┐
   │  3. Generate Embeddings           │
-  │     Vertex AI converts each       │
-  │     frame into a 1408D vector     │
+  │     Amazon Nova 2 converts each   │
+  │     frame into a 1024D vector     │
   │     and stores it in pgvector     │
   └───────────────┬───────────────────┘
                   ▼
   ┌───────────────────────────────────┐
   │  4. Classify Frame Types          │
-  │     Gemini decides what to        │
+  │     Nova 2 Lite decides what to   │
   │     look for (nutrition facts,    │
   │     ingredients, product front)   │
   └───────────────┬───────────────────┘
@@ -79,9 +79,9 @@ The key insight: **a single image is a gamble; a video is a guarantee.** Text hi
                   ▼
   ┌───────────────────────────────────┐
   │  6. Extract Text (optional)       │
-  │     Gemini reads all best frames  │
-  │     in one call and returns       │
-  │     structured JSON data          │
+  │     Nova 2 Lite reads all best    │
+  │     frames in one call and        │
+  │     returns structured JSON data  │
   └───────────────┬───────────────────┘
                   ▼
   ┌───────────────────────────────────┐
@@ -100,7 +100,7 @@ The extraction pipeline is fully configurable from the app's settings:
 | **userPrompt** | — | What to extract (e.g., "Extract all nutrition and ingredient data") |
 | **whatDoesThisVideoContain** | — | Video description to guide frame classification |
 | **suggestFramesToExtract** | — | Hint frame types (e.g., `["nutrition_facts", "ingredients"]`) |
-| **extractToText** | `false` | Enable Gemini text extraction from best frames |
+| **extractToText** | `false` | Enable Nova 2 Lite text extraction from best frames |
 | **extractedDataInformationPrompt** | — | Detailed instructions for text extraction |
 | **concurrency** | `5` | Parallel API calls per batch |
 | **delayBetweenBatchesMs** | `200` | Delay between batches to manage rate limits |
@@ -117,7 +117,7 @@ Built on **Serverpod 3.2**, leveraging its native vector embedding support via p
 Integrated **FFmpeg** invoked at the OS level using Dart's `Process` API to extract frames at 2 FPS. Each video produces dozens of frames that form the input to the RAG pipeline.
 
 ### Multimodal Temporal RAG
-The core innovation. Each frame is converted to a 1408-dimensional vector embedding using **Vertex AI multimodalembedding@001**. Frame type descriptions are converted to text embeddings in the same vector space. **PostgreSQL with pgvector** performs cosine similarity search to find the frames that best match each category — this is the retrieval step of RAG. **Gemini 2.0 Flash** then performs the generation step, extracting structured text from the retrieved frames.
+The core innovation. Each frame is converted to a 1024-dimensional vector embedding using **Amazon Nova 2 Multimodal Embeddings** (`amazon.nova-2-multimodal-embeddings-v1:0`) via **AWS Bedrock Runtime**. Frame type descriptions are converted to text embeddings in the same 1024-dim vector space using the same model. **PostgreSQL with pgvector** performs cosine similarity search to find the frames that best match each category — this is the retrieval step of RAG. **Amazon Nova 2 Lite** (`us.amazon.nova-2-lite-v1:0`, US cross-region inference) then performs the generation step, extracting structured text from the retrieved frames in a single multimodal API call.
 
 ### Cloud Storage — AWS S3
 Videos and extracted frames are stored in **AWS S3** (eu-north-1). The pipeline saves video bytes locally for processing and uploads to S3 asynchronously in the background to avoid round-trip latency.
@@ -141,7 +141,7 @@ A cross-platform **Flutter** app with platform-adaptive UI:
   Processing a single video generates dozens of frames, each requiring an embedding API call. We implemented configurable batch concurrency (default 5 parallel calls), delays between batches (200ms), and exponential backoff with jitter — capped at 60 seconds — to handle 429 and RESOURCE_EXHAUSTED errors gracefully.
 
 - **Single-Call Text Extraction:**
-  Initially we called Gemini per frame type, but this hit rate limits fast and lost cross-frame context. We refactored to send ALL extracted frames to Gemini in a **single multimodal API call**, which is both faster and more accurate since Gemini can cross-reference information across images.
+  Initially we called Nova 2 Lite per frame type, but this hit rate limits fast and lost cross-frame context. We refactored to send ALL extracted frames to Nova 2 Lite in a **single multimodal API call**, which is both faster and more accurate since the model can cross-reference information across images.
 
 - **FFmpeg & Dart Ecosystem Gaps:**
   FFmpeg lacks a robust native Dart package for frame extraction. As a workaround, we invoked **FFmpeg directly at the OS level** using Dart's `Process` API, enabling reliable frame slicing while preserving performance.

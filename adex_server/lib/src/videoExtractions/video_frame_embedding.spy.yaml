@@ -14,8 +14,8 @@ fields:
   timestamp: double
   ### Path to the frame image file (temporary storage)
   framePath: String
-  ### The embedding vector from Vertex AI multimodalembedding@002 (1408 dimensions)
-  embedding: Vector(1408)
+  ### The embedding vector from Amazon Nova 2 Multimodal Embeddings (1024 dimensions)
+  embedding: Vector(1024)
   ### Additional metadata as JSON string (optional)
   metadata: String?
   ### When this frame was processed

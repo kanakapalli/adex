@@ -81,7 +81,7 @@ abstract class VideoFrameEmbedding implements _i1.SerializableModel {
   /// Path to the frame image file (temporary storage)
   String framePath;
 
-  /// The embedding vector from Vertex AI multimodalembedding@002 (1408 dimensions)
+  /// The embedding vector from Amazon Nova 2 Multimodal Embeddings (1024 dimensions)
   _i1.Vector embedding;
 
   /// Additional metadata as JSON string (optional)

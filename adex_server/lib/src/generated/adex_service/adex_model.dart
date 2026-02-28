@@ -113,7 +113,7 @@ abstract class AdexModel
   /// Processing status: pending, processing, completed, failed
   String status;
 
-  /// Gemini-generated frame types JSON
+  /// Nova 2 Lite-generated frame types JSON
   String? frameTypesJson;
 
   /// Extracted frames data as JSON with frame type, description, count, and URLs
@@ -498,7 +498,7 @@ class AdexModelTable extends _i1.Table<int?> {
   /// Processing status: pending, processing, completed, failed
   late final _i1.ColumnString status;
 
-  /// Gemini-generated frame types JSON
+  /// Nova 2 Lite-generated frame types JSON
   late final _i1.ColumnString frameTypesJson;
 
   /// Extracted frames data as JSON with frame type, description, count, and URLs

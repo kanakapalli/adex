@@ -84,7 +84,7 @@ abstract class VideoFrameEmbedding
   /// Path to the frame image file (temporary storage)
   String framePath;
 
-  /// The embedding vector from Vertex AI multimodalembedding@002 (1408 dimensions)
+  /// The embedding vector from Amazon Nova 2 Multimodal Embeddings (1024 dimensions)
   _i1.Vector embedding;
 
   /// Additional metadata as JSON string (optional)
@@ -316,7 +316,7 @@ class VideoFrameEmbeddingTable extends _i1.Table<int?> {
     embedding = _i1.ColumnVector(
       'embedding',
       this,
-      dimension: 1408,
+      dimension: 1024,
     );
     metadata = _i1.ColumnString(
       'metadata',
@@ -349,7 +349,7 @@ class VideoFrameEmbeddingTable extends _i1.Table<int?> {
   /// Path to the frame image file (temporary storage)
   late final _i1.ColumnString framePath;
 
-  /// The embedding vector from Vertex AI multimodalembedding@002 (1408 dimensions)
+  /// The embedding vector from Amazon Nova 2 Multimodal Embeddings (1024 dimensions)
   late final _i1.ColumnVector embedding;
 
   /// Additional metadata as JSON string (optional)

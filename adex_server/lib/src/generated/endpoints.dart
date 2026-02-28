@@ -8,7 +8,6 @@
 // ignore_for_file: type_literal_in_constant_pattern
 // ignore_for_file: use_super_parameters
 // ignore_for_file: invalid_use_of_internal_member
-// ignore_for_file: deprecated_member_use_from_same_package
 
 // ignore_for_file: no_leading_underscores_for_library_prefixes
 import 'package:serverpod/serverpod.dart' as _i1;
@@ -17,12 +16,11 @@ import '../auth/email_idp_endpoint.dart' as _i3;
 import '../auth/jwt_refresh_endpoint.dart' as _i4;
 import '../greetings/greeting_endpoint.dart' as _i5;
 import '../upload/upload_endpoint.dart' as _i6;
-import '../videoExtractions/videoExration.dart' as _i7;
-import 'dart:typed_data' as _i8;
+import 'dart:typed_data' as _i7;
 import 'package:serverpod_auth_idp_server/serverpod_auth_idp_server.dart'
-    as _i9;
+    as _i8;
 import 'package:serverpod_auth_core_server/serverpod_auth_core_server.dart'
-    as _i10;
+    as _i9;
 
 class Endpoints extends _i1.EndpointDispatch {
   @override
@@ -56,12 +54,6 @@ class Endpoints extends _i1.EndpointDispatch {
         ..initialize(
           server,
           'upload',
-          null,
-        ),
-      'videoExtraction': _i7.VideoExtractionEndpoint()
-        ..initialize(
-          server,
-          'videoExtraction',
           null,
         ),
     };
@@ -143,7 +135,7 @@ class Endpoints extends _i1.EndpointDispatch {
           params: {
             'video': _i1.ParameterDescription(
               name: 'video',
-              type: _i1.getType<_i8.ByteData>(),
+              type: _i1.getType<_i7.ByteData>(),
               nullable: false,
             ),
             'userPrompt': _i1.ParameterDescription(
@@ -527,7 +519,7 @@ class Endpoints extends _i1.EndpointDispatch {
             ),
             'fileData': _i1.ParameterDescription(
               name: 'fileData',
-              type: _i1.getType<_i8.ByteData>(),
+              type: _i1.getType<_i7.ByteData>(),
               nullable: false,
             ),
           },
@@ -591,67 +583,9 @@ class Endpoints extends _i1.EndpointDispatch {
         ),
       },
     );
-    connectors['videoExtraction'] = _i1.EndpointConnector(
-      name: 'videoExtraction',
-      endpoint: endpoints['videoExtraction']!,
-      methodConnectors: {
-        'processVideoComplete': _i1.MethodConnector(
-          name: 'processVideoComplete',
-          params: {
-            'videoUrl': _i1.ParameterDescription(
-              name: 'videoUrl',
-              type: _i1.getType<String>(),
-              nullable: false,
-            ),
-            'outputDir': _i1.ParameterDescription(
-              name: 'outputDir',
-              type: _i1.getType<String>(),
-              nullable: false,
-            ),
-            'textExtraction': _i1.ParameterDescription(
-              name: 'textExtraction',
-              type: _i1.getType<bool>(),
-              nullable: false,
-            ),
-          },
-          call:
-              (
-                _i1.Session session,
-                Map<String, dynamic> params,
-              ) async =>
-                  (endpoints['videoExtraction'] as _i7.VideoExtractionEndpoint)
-                      .processVideoComplete(
-                        session,
-                        params['videoUrl'],
-                        params['outputDir'],
-                        textExtraction: params['textExtraction'],
-                      ),
-        ),
-        'extractVideoFrames': _i1.MethodConnector(
-          name: 'extractVideoFrames',
-          params: {
-            'videoUrl': _i1.ParameterDescription(
-              name: 'videoUrl',
-              type: _i1.getType<String>(),
-              nullable: false,
-            ),
-          },
-          call:
-              (
-                _i1.Session session,
-                Map<String, dynamic> params,
-              ) async =>
-                  (endpoints['videoExtraction'] as _i7.VideoExtractionEndpoint)
-                      .extractVideoFrames(
-                        session,
-                        params['videoUrl'],
-                      ),
-        ),
-      },
-    );
-    modules['serverpod_auth_idp'] = _i9.Endpoints()
+    modules['serverpod_auth_idp'] = _i8.Endpoints()
       ..initializeEndpoints(server);
-    modules['serverpod_auth_core'] = _i10.Endpoints()
+    modules['serverpod_auth_core'] = _i9.Endpoints()
       ..initializeEndpoints(server);
   }
 }
